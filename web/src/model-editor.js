@@ -9,7 +9,8 @@ export function editableMeshes(root) {
 export function meshSnapshot(mesh) {
   return {position:mesh.position.toArray(),rotation:[mesh.rotation.x,mesh.rotation.y,mesh.rotation.z],
     scale:mesh.scale.toArray(),visible:mesh.visible,
-    color:mesh.material?.color?.getHexString?.()||null};
+    color:(Array.isArray(mesh.material)?mesh.material[0]:mesh.material)?.color?.getHexString?.()||null,
+    materialColors:(Array.isArray(mesh.material)?mesh.material:[mesh.material]).map(mat=>mat?.color?.getHexString?.()||null)};
 }
 export function applySnapshot(mesh,snapshot) {
   if(!mesh||!snapshot)throw new Error('Mesh and snapshot required');
@@ -17,7 +18,9 @@ export function applySnapshot(mesh,snapshot) {
   mesh.rotation.set(...snapshot.rotation);
   mesh.scale.fromArray(snapshot.scale);
   mesh.visible=Boolean(snapshot.visible);
-  if(snapshot.color&&mesh.material?.color)mesh.material.color.set('#'+snapshot.color);
+  const mats=Array.isArray(mesh.material)?mesh.material:[mesh.material];
+  mats.forEach((mat,i)=>{const previous=snapshot.materialColors?.[i]||snapshot.color;
+    if(previous&&mat?.color)mat.color.set('#'+previous);});
   mesh.updateMatrixWorld(true);
 }
 export function applyMeshEdit(mesh,{position,rotation,scale,visible,color}) {
@@ -30,6 +33,12 @@ export function applyMeshEdit(mesh,{position,rotation,scale,visible,color}) {
   mesh.visible=Boolean(visible);
   if(color){
     if(!/^#[0-9a-fA-F]{6}$/.test(color))throw new Error('Invalid color value');
+    // Give this mesh its own material instance so editing its color does not
+    // unexpectedly recolor other meshes sharing the original material.
+    if(!mesh.userData.modelViewOwnedMaterial){
+      mesh.material=Array.isArray(mesh.material)?mesh.material.map(mat=>mat?.clone?.()||mat):mesh.material?.clone?.()||mesh.material;
+      mesh.userData.modelViewOwnedMaterial=true;
+    }
     const mats=Array.isArray(mesh.material)?mesh.material:[mesh.material];
     for(const mat of mats) if(mat?.color)mat.color.set(color);
   }
@@ -50,6 +59,7 @@ export function addPrimitive(root,shape='box') {
 }
 export function duplicateMesh(mesh) {
   if(!mesh?.parent)throw new Error('Mesh has no parent');
+  if(mesh.isSkinnedMesh)throw new Error('Duplicating rigged meshes is not supported yet.');
   const clone=mesh.clone(false);
   clone.geometry=mesh.geometry.clone();
   clone.material=Array.isArray(mesh.material)?
