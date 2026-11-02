@@ -4,8 +4,10 @@ import { ModelStage } from './stage.js';
 import { projectFromFiles, projectFromZip, loadModel, exportGlb, demoModel,
   downloadBlob, extension } from './model.js';
 import { auditModel, reportJson } from './model-audit.js';
+import { initializeStudio } from './studio-actions.js';
 
 const $ = id => document.getElementById(id);
+let studio = null;
 const COMMON = new Set(['.glb','.gltf','.fbx','.obj','.dae','.stl','.ply','.3ds']);
 const IMAGE = new Set(['.png','.jpg','.jpeg','.webp','.bmp']);
 const state = {stage:null, project:null, loaded:null, audit:null, busy:false,
@@ -40,6 +42,7 @@ function resetLoaded() {
   state.loaded?.disposeAssets?.();
   state.loaded = null;
   state.audit = null;
+  studio?.reset();
   $('activeName').textContent='3D viewport';
   $('emptyState').hidden=false;
   $('healthLabel').textContent='WAITING FOR A MODEL';
@@ -128,6 +131,7 @@ function showResult(result,sourceFormat) {
   $('outputName').value=safeFileName(result.selected||'demo-model');
   renderReport();
   renderAnimations();
+  studio?.onModelLoaded();
   applyWireframe($('wireToggle').checked);
   updateButtons();
   status('Loaded '+state.audit.stats.meshes+' mesh(es); '+state.audit.stats.triangles.toLocaleString('en-US')+' triangles. All processing is local.');
@@ -382,6 +386,17 @@ function events() {
 }
 function start() {
   events();
+  studio = initializeStudio({
+    getRoot: () => state.loaded?.root || null,
+    getStage: () => state.stage,
+    onChanged: () => {
+      if (!state.loaded) return;
+      state.audit = auditModel(state.loaded.root,state.loaded.animations||[]);
+      renderReport();
+      updateButtons();
+    },
+    onMessage: status
+  });
   try {
     state.stage=new ModelStage($('canvasHost'));
     state.stage.setGrid(true);
