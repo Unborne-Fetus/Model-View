@@ -1,10 +1,10 @@
 {
-  "name": "gfpak-open-web",
+  "name": "model-view",
   "private": true,
   "engines": {
     "node": ">=22"
   },
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
@@ -20,5 +20,6 @@
     "vite": "^6.3.6",
     "@playwright/test": "^1.55.1",
     "flatbuffers": "^25.2.10"
-  }
+  },
+  "description": "Local-first 3D model preview, inspection and export"
 }
