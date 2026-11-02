@@ -61,3 +61,14 @@ a{color:inherit;text-decoration:none}a:hover{color:#6ff0d7}em{font-style:normal;
 #sliceLayer{width:100%;accent-color:#64e9cf}
 #sliceCanvas{max-width:100%;width:100%;height:auto;min-height:180px;object-fit:contain;background:#071522;border:1px solid #294a59;border-radius:8px}
 @media(max-width:530px){.edit-transform-grid{grid-template-columns:1fr}.edit-group{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:auto}.edit-group label{display:flex;flex-direction:column}.edit-group input{width:100%}.studio-editor-top{grid-template-columns:1fr 100px}.studio-check{grid-column:1/-1}.print-controls{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* FDM printer profile compatibility controls */
+.printer-profile-controls{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;border:1px solid #345362;background:#0e2331;border-radius:9px;padding:12px}
+.printer-profile-controls .printer-profile-name{grid-column:span 2}
+.printer-profile-controls input.field:disabled{opacity:.75;cursor:not-allowed}
+#printResult,#printerFit{white-space:normal;overflow-wrap:anywhere}
+#printerFit.fit-pass{border-color:#377d68;background:#102f2a;color:#a9eed3}
+#printerFit.fit-fail{border-color:#9a6552;background:#402823;color:#ffe1d0}
+#printerFit.fit-warning{border-color:#8a794b;color:#f3ddaa}
+@media(max-width:1000px){.printer-profile-controls{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:550px){.printer-profile-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.printer-profile-controls .printer-profile-name{grid-column:1/-1}}
