@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=65"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gfpak-open"
+version = "0.1.0"
+description = "Read-only GFLXPACK archive inspector and resource exporter"
+requires-python = ">=3.10"
+dependencies = ["cryptography>=44,<48", "zstandard>=0.23,<1", "lz4>=4,<5"]
+
+[project.optional-dependencies]
+lz4 = ["lz4>=4"]
+# Optional independent GPL-3.0-or-later open-source Oodle decoder.
+# See https://pypi.org/project/pyooz/ for its source and license.
+oodle = ["pyooz==0.0.8"]
+
+[project.scripts]
+gfpak-open = "gfpak_open.cli:main"
+gfpak-open-gui = "gfpak_open.gui:main"
+
+[tool.setuptools.packages.find]
+include = ["gfpak_open*"]
