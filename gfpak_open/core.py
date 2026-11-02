@@ -1,0 +1,383 @@
+"""Read-only GFLXPACK / GFPAK index reader and bounded resource extraction.
+
+Game assets, hash dictionaries, and proprietary decoders are not bundled.
+"""
+from __future__ import annotations
+
+import ctypes
+import os
+import re
+import shutil
+import json
+import mmap
+import struct
+from collections import OrderedDict
+from dataclasses import asdict, dataclass
+from pathlib import Path
+
+
+class GFPakError(ValueError):
+    """Invalid archive or unavailable decompression backend."""
+
+
+@dataclass(frozen=True)
+class Resource:
+    index: int
+    level: int
+    compression: int
+    size: int
+    packed_size: int
+    offset: int
+    path_hash: str
+    folder: int | None
+    folder_hash: str | None
+    file_hash: str | None
+
+    @property
+    def filename(self) -> str:
+        return f"{self.index:04d}_{self.path_hash}.bin"
+
+    @property
+    def folder_name(self) -> str:
+        return f"folder_{self.folder:02d}_{self.folder_hash}" if self.folder is not None else "unassigned"
+
+
+class GFPak:
+    MAX_FILES = 250_000
+    MAX_SINGLE_FILE = 512 * 1024 * 1024
+
+    def __init__(self, source: str | Path):
+        self.source = Path(source)
+        self._bytes = None
+        self._length = self.source.stat().st_size
+        self.version = 0
+        self.relocated = 0
+        self.resources: list[Resource] = []
+        self.folder_count = 0
+        # Map only while indexing; release the file handle immediately.
+        # This avoids both multi-GB heap allocation and Windows file locks.
+        with self.source.open("rb") as handle:
+            if self.source.stat().st_size < 40:
+                raise GFPakError("Truncated GFLXPACK header")
+            with mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ) as index:
+                self._bytes = index
+                try:
+                    self._parse()
+                finally:
+                    self._bytes = None
+
+    def close(self) -> None:
+        """Compatibility hook; archive handles are not kept open."""
+        return None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
+    def _range(self, offset: int, size: int) -> bytes:
+        with self.source.open("rb") as handle:
+            handle.seek(offset)
+            contents = handle.read(size)
+        if len(contents) != size:
+            raise GFPakError("Archive changed or truncated since indexing")
+        return contents
+
+    def _read(self, fmt: str, at: int) -> tuple:
+        size = struct.calcsize(fmt)
+        if at < 0 or size > self._length - at:
+            raise GFPakError(f"Invalid archive: out-of-bounds structure at 0x{at:X}")
+        if self._bytes is not None:
+            return struct.unpack_from(fmt, self._bytes, at)
+        return struct.unpack(fmt, self._range(at, size))
+
+    def _parse(self) -> None:
+        if self._length < 40 or self._range(0, 8) != b"GFLXPACK":
+            raise GFPakError("Not a complete GFLXPACK archive")
+        if self._length < 40:
+            raise GFPakError("Truncated GFLXPACK header")
+        self.version, self.relocated, count, self.folder_count = self._read("<4I", 8)
+        if count > self.MAX_FILES or self.folder_count > self.MAX_FILES:
+            raise GFPakError("Archive declares an unreasonable number of entries")
+        table_offset, paths_offset = self._read("<QQ", 24)
+        folder_offsets = [self._read("<Q", 40 + i * 8)[0] for i in range(self.folder_count)]
+        global_hashes = [self._read("<Q", paths_offset + i * 8)[0] for i in range(count)]
+
+        associations: dict[int, tuple[int, int, int]] = {}
+        for folder_number, offset in enumerate(folder_offsets):
+            folder_hash, folder_files, _ = self._read("<QII", offset)
+            if folder_files > count:
+                raise GFPakError("Folder references more files than the archive contains")
+            for i in range(folder_files):
+                file_hash, index, _ = self._read("<QII", offset + 16 + i * 16)
+                if index >= count or index in associations:
+                    raise GFPakError("Duplicate or invalid file index in folder table")
+                associations[index] = (folder_number, folder_hash, file_hash)
+
+        for index in range(count):
+            level, compression, size, packed_size, _, offset, _ = self._read(
+                "<HHIIIII", table_offset + 24 * index
+            )
+            # Oversized resources are valid for indexing or streaming extraction.
+            if offset > self._length or packed_size > self._length - offset:
+                raise GFPakError(f"Resource {index} extends beyond the archive")
+            folder = associations.get(index)
+            self.resources.append(Resource(
+                index, level, compression, size, packed_size, offset,
+                f"{global_hashes[index]:016x}",
+                folder[0] if folder else None,
+                f"{folder[1]:016x}" if folder else None,
+                f"{folder[2]:016x}" if folder else None,
+            ))
+
+    def summary(self) -> dict:
+        compression_counts: dict[str, int] = {}
+        for r in self.resources:
+            key = str(r.compression)
+            compression_counts[key] = compression_counts.get(key, 0) + 1
+        return {
+            "archive": self.source.name,
+            "version": f"0x{self.version:04X}",
+            "file_count": len(self.resources),
+            "folder_count": self.folder_count,
+            "compression_types": compression_counts,
+            "packed_bytes": sum(r.packed_size for r in self.resources),
+            "unpacked_bytes": sum(r.size for r in self.resources),
+        }
+
+    def report(self) -> dict:
+        return {"summary": self.summary(), "resources": [asdict(r) for r in self.resources]}
+
+    def save_report(self, output: str | Path) -> None:
+        Path(output).write_text(json.dumps(self.report(), indent=2), encoding="utf-8")
+
+    def read_resource(self, resource: Resource, *, oodle_dll: str | Path | None = None,
+                      packed: bool = False) -> bytes:
+        if not 0 <= resource.index < len(self.resources) or self.resources[resource.index] != resource:
+            raise GFPakError("Resource does not belong to this archive")
+        if resource.size > self.MAX_SINGLE_FILE or resource.packed_size > self.MAX_SINGLE_FILE:
+            raise GFPakError(
+                "Resource exceeds the 512 MiB in-memory limit; "
+                "export stored or packed data using streaming extraction."
+            )
+        block = self._range(resource.offset, resource.packed_size)
+        if packed:
+            return block
+        if resource.compression == 0:
+            if len(block) != resource.size:
+                raise GFPakError("Stored resource size mismatch")
+            return block
+        if resource.compression == 2:
+            try:
+                import lz4.block
+            except ImportError as exc:
+                raise GFPakError("LZ4 resource requires: pip install lz4") from exc
+            try:
+                data = lz4.block.decompress(block, uncompressed_size=resource.size)
+            except Exception as exc:
+                raise GFPakError(f"LZ4 decompression failed for resource {resource.index}: {exc}") from exc
+        elif resource.compression == 3:
+            dll_error = None
+            data = None
+            if oodle_dll:
+                try:
+                    data = decompress_oodle(block, resource.size, Path(oodle_dll))
+                except GFPakError as exc:
+                    dll_error = exc
+            if data is None:
+                # pyooz is a separate open-source decoder. Falling back to it
+                # also handles locally selected DLLs that cannot decode a block.
+                try:
+                    import ooz
+                except ImportError as exc:
+                    if dll_error is not None:
+                        raise GFPakError(
+                            f"Oodle DLL failed: {dll_error}. Install pyooz as a fallback."
+                        ) from dll_error
+                    raise GFPakError(
+                        "Oodle decoder missing. Install pyooz (pip install pyooz==0.0.8) "
+                        "or select an existing compatible oo2core_*.dll."
+                    ) from exc
+                try:
+                    data = ooz.decompress(block, resource.size)
+                except Exception as exc:
+                    raise GFPakError(
+                        f"No available Oodle backend decoded resource {resource.index}: "
+                        f"{exc}" + (f" (DLL also failed: {dll_error})" if dll_error else "")
+                    ) from exc
+        else:
+            raise GFPakError(f"Unsupported compression type: {resource.compression}")
+        if len(data) != resource.size:
+            raise GFPakError(f"Resource {resource.index}: decompressed size mismatch")
+        return data
+
+    def peek_resource(self, resource: Resource, length: int = 512) -> tuple[bytes, bool]:
+        """Preview a few bytes; decode only small compressed resources."""
+        if not 0 <= resource.index < len(self.resources) or self.resources[resource.index] != resource:
+            raise GFPakError("Resource does not belong to this archive")
+        count = min(max(int(length), 0), 4096)
+        if resource.compression == 0:
+            return self._range(resource.offset, min(count, resource.size)), True
+        if resource.size <= 8 * 1024 * 1024:
+            return self.read_resource(resource)[:count], True
+        return self._range(resource.offset, min(count, resource.packed_size)), False
+
+    def copy_resource(self, resource: Resource, target: str | Path, *,
+                      packed: bool = False, oodle_dll: str | Path | None = None) -> Path:
+        """Stream undecoded bytes in 1 MiB chunks without replacing existing files."""
+        if not 0 <= resource.index < len(self.resources) or self.resources[resource.index] != resource:
+            raise GFPakError("Resource does not belong to this archive")
+        destination = Path(target)
+        if not destination.parent.is_dir():
+            raise GFPakError("Destination directory does not exist")
+        with destination.open("xb") as output:
+            try:
+                if packed or resource.compression == 0:
+                    if not packed and resource.size != resource.packed_size:
+                        raise GFPakError("Stored resource size mismatch")
+                    remaining = resource.packed_size
+                    with self.source.open("rb") as stream:
+                        stream.seek(resource.offset)
+                        while remaining:
+                            chunk = stream.read(min(1024 * 1024, remaining))
+                            if not chunk:
+                                raise GFPakError("Unexpected end of GFPAK resource")
+                            output.write(chunk)
+                            remaining -= len(chunk)
+                else:
+                    output.write(self.read_resource(resource, oodle_dll=oodle_dll))
+            except BaseException:
+                output.close()
+                destination.unlink(missing_ok=True)
+                raise
+        return destination
+
+    def extract(self, target: str | Path, resources: list[Resource] | None = None,
+                *, oodle_dll: str | Path | None = None,
+                packed: bool = False) -> list[Path]:
+        target = Path(target)
+        selected = resources if resources is not None else self.resources
+        paths: list[Path] = []
+        for resource in selected:
+            dest = target / resource.folder_name / (resource.filename + (".packed" if packed else ""))
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            paths.append(self.copy_resource(resource, dest, packed=packed, oodle_dll=oodle_dll))
+        return paths
+
+
+
+class VirtualGFPak(GFPak):
+    """Read a GFPAK inside an NCA using bounded random-access reads.
+
+    No temporary GFPAK file or whole-game extraction is required. Header and
+    table lookups reuse small 64 KiB pages; resource payloads are read directly
+    from the owning virtual filesystem only when explicitly requested.
+    """
+
+    PAGE = 64 * 1024
+    MAX_PAGES = 24
+
+    def __init__(self, length: int, read_at, label: str = "virtual.gfpak"):
+        if not isinstance(length, int) or length < 40:
+            raise GFPakError("Virtual GFPAK is truncated")
+        self.source = Path(label)
+        self._length = length
+        self._reader = read_at
+        self._bytes = None
+        self._pages: OrderedDict[int, bytes] = OrderedDict()
+        self.version = 0
+        self.relocated = 0
+        self.resources = []
+        self.folder_count = 0
+        self._parse()
+
+    def _range(self, offset: int, size: int) -> bytes:
+        if size < 0 or offset < 0 or offset > self._length or size > self._length - offset:
+            raise GFPakError("Virtual GFPAK read exceeds its file bounds")
+        if not size:
+            return b""
+        if size > 4096 or offset // self.PAGE != (offset + size - 1) // self.PAGE:
+            block = self._reader(offset, size)
+        else:
+            page = offset // self.PAGE
+            cached = self._pages.get(page)
+            if cached is None:
+                start = page * self.PAGE
+                cached = self._reader(start, min(self.PAGE, self._length - start))
+                if len(cached) != min(self.PAGE, self._length - start):
+                    raise GFPakError("Virtual GFPAK index page was truncated")
+                self._pages[page] = cached
+                if len(self._pages) > self.MAX_PAGES:
+                    self._pages.popitem(last=False)
+            else:
+                self._pages.move_to_end(page)
+            block = cached[offset % self.PAGE:offset % self.PAGE + size]
+        if len(block) != size:
+            raise GFPakError("Virtual GFPAK resource is truncated")
+        return block
+
+def find_oodle_dll(archive: str | Path | None = None) -> Path | None:
+    """Find a locally installed Oodle runtime without downloading proprietary files.
+
+    Search only explicit settings, PATH, and nearby standard installation folders.
+    This deliberately avoids a slow recursive search of the entire computer.
+    """
+    roots: list[Path] = []
+    explicit = os.environ.get("GFPAK_OODLE_DLL")
+    if explicit:
+        candidate = Path(explicit).expanduser()
+        if candidate.is_file() and re.fullmatch(r"oo2core_.*[.]dll", candidate.name, re.I):
+            return candidate.resolve()
+        if candidate.is_dir():
+            roots.append(candidate)
+    if archive is not None:
+        root = Path(archive).expanduser().resolve()
+        roots.extend((root.parent, root.parent / "bin", root.parent / "tools",
+                      root.parent.parent, root.parent.parent / "bin"))
+    roots.append(Path.cwd())
+    roots.extend(Path(p) for p in os.environ.get("PATH", "").split(os.pathsep) if p)
+    for env in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"):
+        parent = os.environ.get(env)
+        if parent:
+            roots.append(Path(parent) / "GFPAK-OPEN")
+    seen = set()
+    for folder in roots:
+        if str(folder).lower() in seen:
+            continue
+        seen.add(str(folder).lower())
+        try:
+            candidates = sorted(folder.glob("oo2core_*.dll"), reverse=True)
+            for candidate in candidates:
+                if candidate.is_file():
+                    return candidate.resolve()
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+def decompress_oodle(packed: bytes, expected_size: int, dll: Path) -> bytes:
+    """Use a user-provided official Oodle runtime. Never download or distribute DLLs."""
+    if not dll.is_file():
+        raise GFPakError(f"Oodle DLL not found: {dll}")
+    if expected_size < 0 or expected_size > GFPak.MAX_SINGLE_FILE:
+        raise GFPakError("Invalid output size")
+    try:
+        library = ctypes.CDLL(str(dll.resolve()))
+        func = library.OodleLZ_Decompress
+        func.argtypes = [ctypes.c_void_p, ctypes.c_ssize_t,
+                         ctypes.c_void_p, ctypes.c_ssize_t,
+                         ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                         ctypes.c_void_p, ctypes.c_ssize_t,
+                         ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+                         ctypes.c_ssize_t, ctypes.c_int]
+        func.restype = ctypes.c_ssize_t
+        src = ctypes.create_string_buffer(packed)
+        dst = ctypes.create_string_buffer(max(expected_size, 1))
+        n = func(src, len(packed), dst, expected_size,
+                 1, 0, 0, None, 0, None, None, None, 0, 3)
+    except (OSError, AttributeError) as exc:
+        raise GFPakError(f"Cannot load compatible Oodle DLL: {exc}") from exc
+    if n != expected_size:
+        raise GFPakError(f"Oodle decoded {n} bytes, expected {expected_size}")
+    return dst.raw[:n]
