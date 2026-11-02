@@ -72,3 +72,24 @@ a{color:inherit;text-decoration:none}a:hover{color:#6ff0d7}em{font-style:normal;
 #printerFit.fit-warning{border-color:#8a794b;color:#f3ddaa}
 @media(max-width:1000px){.printer-profile-controls{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:550px){.printer-profile-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.printer-profile-controls .printer-profile-name{grid-column:1/-1}}
+
+/* Studio 2026 visual refresh: restrained electric violet and mint on deep slate */
+:root{background:#080d1a;color:#eaf1ff;--studio-border:#34415e;--studio-accent:#b7a1ff}
+body{background:radial-gradient(ellipse 800px 450px at 88% -120px,#5145a466,transparent),radial-gradient(ellipse 700px 450px at -12% 28%,#10665b35,transparent),#080d1a}
+.masthead{border-bottom-color:#33405d;backdrop-filter:blur(12px)}
+.brand-mark{background:linear-gradient(135deg,#5243a8,#147a77);border-color:#8072d0;box-shadow:0 6px 24px #5145a455;color:#fff}
+em,.brand em{color:#bba9ff}
+.eyebrow{color:#a7a1fa}
+.top-links a:hover,.text-action:hover{color:#c7b9ff}
+.button.primary{background:linear-gradient(120deg,#7965e9,#55d5bd);color:#07101b;border-color:#9686f3;font-weight:800;box-shadow:0 6px 22px #6958b33b}
+.button.primary:hover{filter:brightness(1.1);transform:translateY(-1px)}
+.button,.studio-panel,.ad-placeholder{transition:border-color .18s ease,box-shadow .18s ease,background .18s ease,transform .18s ease}
+.studio-panel{background:linear-gradient(155deg,#17233a,#0f1b2d);border-color:#394667;box-shadow:0 10px 30px #05091436}
+.studio-panel:hover{border-color:#6b67a6}
+.field:focus,input:focus-visible,select:focus-visible,button:focus-visible{outline-color:#baa8ff}
+.ad-placeholder{border:1px dashed #4b5275;background:linear-gradient(120deg,#131b2d,#171d32);color:#a9b2cb}
+.ad-placeholder .ad-label{color:#a5a5d4}
+.ad-inline{min-height:66px;margin:16px 0;padding:12px;display:flex;gap:14px;align-items:center;justify-content:center;flex-wrap:wrap;border-radius:12px}
+.ad-inline .ad-label{font-size:10px;letter-spacing:.14em}
+.ad-inline .ad-description{font-size:11px}
+@media(max-width:600px){.ad-inline{min-height:48px;margin:10px 0;padding:9px}.ad-inline .ad-description{font-size:10px}}
