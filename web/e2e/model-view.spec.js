@@ -96,3 +96,21 @@ test('specialized legacy explorer remains available on a separate page', async (
   await expect(page).toHaveTitle(/Model View/);
   await expect(page.locator('#tabArchive')).toBeVisible();
 });
+
+test('five inactive ad placements and specialized Pokémon model file acceptance',async ({page})=>{
+  await page.goto('./');
+  await expect(page.locator('[data-ad-slot]')).toHaveCount(5);
+  for(const id of ['leaderboard','below-workspace','intro-banner','editor-break','print-break']){
+    await expect(page.locator('[data-ad-slot="'+id+'"]')).toContainText('Advertising is not active');
+  }
+  await expect(page.locator('#filesInput')).toHaveAttribute('accept',/\.trmdl/);
+  await expect(page.locator('#filesInput')).toHaveAttribute('accept',/\.gfbmdl/);
+});
+test('specialized model files appear in the main model picker without a fake successful preview',async ({page})=>{
+  await page.goto('./');
+  await page.locator('#filesInput').setInputFiles({name:'pokemon.trmdl',mimeType:'application/octet-stream',buffer:Buffer.from('invalid-trmdl')});
+  await expect(page.locator('#modelCount')).toContainText('1/1');
+  await expect(page.locator('#loadModel')).toBeEnabled();
+  await page.locator('#loadModel').click();
+  await expect(page.locator('#statusLine')).toContainText(/failed|unsupported|missing|invalid|error/i);
+});
