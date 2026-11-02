@@ -106,10 +106,9 @@ jobs:
     needs: [build, check-pages]
     steps:
       - name: Publish to GitHub Pages
-        if: needs.check-pages.outputs.ready == 'true'
         id: deployment
         uses: actions/deploy-pages@v5
       - name: Report deployment URL
-        if: steps.pages.outputs.ready == 'true'
+        if: success()
         shell: bash
         run: echo "Model View deployed to https://unborne-fetus.github.io/Model-View/" >> "$GITHUB_STEP_SUMMARY"
