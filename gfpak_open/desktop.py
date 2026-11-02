@@ -128,7 +128,7 @@ def main():
     with http.server.ThreadingHTTPServer(("127.0.0.1", 0), factory) as server:
         server.daemon_threads = True
         threading.Thread(target=server.serve_forever, daemon=True).start()
-        url = f"http://127.0.0.1:{server.server_port}/legacy.html"
+        url = f"http://127.0.0.1:{server.server_port}/"
         webview.create_window("Model View — Desktop Asset Tools", url,
                               js_api=api, width=1380, height=900, min_size=(1000, 680))
         try:
