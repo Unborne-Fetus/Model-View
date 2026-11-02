@@ -417,7 +417,7 @@ export function downloadBlob(filename, data, mime = 'application/octet-stream') 
 
 export function demoModel() {
   const root = new THREE.Group();
-  root.name = 'Demo geometry (not a Pokémon)';
+  root.name = 'Demo geometry';
   const center = new THREE.Mesh(
     new THREE.IcosahedronGeometry(1.25, 1),
     new THREE.MeshStandardMaterial({ color: 0x58e0bb, metalness: 0.38, roughness: 0.26, flatShading: true })
