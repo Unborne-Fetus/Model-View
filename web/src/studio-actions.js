@@ -24,9 +24,13 @@ export function initializeStudio({getRoot,getStage,onChanged,onMessage}) {
     $('printResult').textContent='Model changed. Slice again to update the print preview.';
   }
   function changed(){
+    // An active clip may overwrite user-edited transforms on the next frame.
+    const stage=getStage();
+    if(stage?.currentAction)stage.currentAction.paused=true;
+    if(stage)stage.playing=false;
     invalidateSlice();
     onChanged();
-    getStage()?.frame();
+    stage?.frame();
     refreshMeshList(selection?.uuid);
   }
   function selected(){return meshes().find(x=>x.uuid===selection?.uuid)||null;}
