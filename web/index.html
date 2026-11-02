@@ -137,6 +137,27 @@
       <section class="studio-panel" id="printPanel" aria-labelledby="printHeading">
         <div class="panel-heading"><span class="eyebrow">3D PRINT / EXPERIMENTAL</span><h2 id="printHeading">Layer slicer &amp; supports</h2>
           <p>Preview geometric cross-sections and export an STL with optional vertical supports.</p></div>
+        <div class="printer-profile-controls">
+          <label class="studio-label printer-profile-name">3D printer profile
+            <select class="field" id="printerProfile">
+              <option value="generic">Generic FDM (220 × 220 × 250)</option>
+              <option value="ender3-v3-se">Creality Ender-3 V3 SE</option>
+              <option value="bambu-a1">Bambu Lab A1</option>
+              <option value="prusa-mk4s">Original Prusa MK4S</option>
+              <option value="custom">Custom FDM printer</option>
+            </select>
+          </label>
+          <label class="studio-label">Bed X (mm) <input class="field" id="printerBedX" type="number" min="1" max="10000" step="1" value="220" disabled></label>
+          <label class="studio-label">Bed Y (mm) <input class="field" id="printerBedY" type="number" min="1" max="10000" step="1" value="220" disabled></label>
+          <label class="studio-label">Height Z (mm) <input class="field" id="printerBedZ" type="number" min="1" max="10000" step="1" value="250" disabled></label>
+          <label class="studio-label">Nozzle (mm) <input class="field" id="printerNozzle" type="number" min="0.1" max="2" step="0.1" value="0.4"></label>
+          <label class="studio-label">Filament (mm) <select class="field" id="printerFilament">
+            <option value="1.75">1.75</option><option value="2.85">2.85</option>
+          </select></label>
+          <label class="studio-label">Bed margin (mm) <input class="field" id="printerMargin" type="number" min="0" max="100" step="0.5" value="0"></label>
+        </div>
+        <p id="slicerRecommendation" class="studio-note">Select a printer to compare your model with its build volume. Always verify actual printer specifications.</p>
+        <div id="printerFit" class="print-result" role="status" aria-live="polite">Load a model and select Slice model to check build-volume compatibility.</div>
         <div class="print-controls">
           <label class="studio-label">Layer height (mm) <input class="field" id="layerHeight" type="number" min="0.05" max="2" step="0.05" value="0.2"></label>
           <label class="studio-label">Model units <select class="field" id="unitScale"><option value="1">Millimetres (×1)</option><option value="10">Centimetres (×10)</option><option value="1000">Metres (×1000)</option><option value="25.4">Inches (×25.4)</option></select></label>
@@ -153,6 +174,7 @@
           <div class="edit-actions">
             <button id="saveSlice" class="button secondary" type="button">Export layer SVG</button>
             <button id="saveStl" class="button secondary" type="button">Export STL with supports</button>
+            <button id="savePrintSetup" class="button secondary" type="button">Export setup report (JSON)</button>
           </div>
         </div>
         <p class="studio-note">This is an experimental geometric slice preview, NOT a production printer slicer: no G-code, infill, collision-checked supports or mesh repairs. Always validate the resulting STL in dedicated printer-slicer software. Choose units accurately.</p>
