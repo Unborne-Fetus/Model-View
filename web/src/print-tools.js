@@ -10,7 +10,8 @@ const key = p => `${Math.round(p[0]*10000)},${Math.round(p[1]*10000)}`;
 const finite = n => Number.isFinite(n);
 const between = (n,min,max) => n>=min-EPS&&n<=max+EPS;
 
-export function extractPrintMesh(root, maxTriangles=100000) {
+export function extractPrintMesh(root, maxTriangles=100000, unitScale=1) {
+  if(!Number.isFinite(unitScale)||unitScale<=0||unitScale>1000)throw new Error('Invalid unit conversion scale.');
   if (!root?.traverse) throw new Error('Load a model first.');
   root.updateWorldMatrix(true,true);
   const raw = [];
@@ -23,7 +24,7 @@ export function extractPrintMesh(root, maxTriangles=100000) {
     if(raw.length+count>maxTriangles) throw new Error('Model too complex for browser slicing (limit '+maxTriangles.toLocaleString()+' triangles).');
     const read=i=>{
       const p=new THREE.Vector3().fromBufferAttribute(pos,i).applyMatrix4(mesh.matrixWorld);
-      return [p.x,-p.z,p.y];
+      return [p.x*unitScale,-p.z*unitScale,p.y*unitScale];
     };
     for(let i=0;i<count;i++){
       const a=read(index?index.getX(i*3):i*3);
