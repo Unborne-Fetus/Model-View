@@ -30,13 +30,13 @@ jobs:
       - name: Test model inspection and legacy parsers
         run: npm test
       - name: Install Playwright browser
-        run: npx playwright install chromium --with-deps
+        run: npx playwright install --with-deps chromium firefox webkit
       - name: Smoke test Model View import, validation and export
         run: npx playwright test
       - name: Upload failure screenshots if any
         if: failure()
         uses: actions/upload-artifact@v6
         with:
-          name: web-smoke-failures
+          name: model-view-browser-test-failures
           path: test-results/
           if-no-files-found: ignore
