@@ -1,0 +1,936 @@
+/** GFPAK Open Web — all user data remains inside the browser. */
+import './style.css';
+import {exportPokemonZip, pokemonExportMetadata} from './pokemon-export.js';
+import { ModelStage } from './stage.js';
+import { GAMES, gameById, detectGameFromNames, describeSource, identifyFormat } from './game-support.js';
+import { loadGfbmdl } from './gfbmdl-model.js';
+import {
+  inspectTexture, drawTextureSurface, texturePngName, isInspectableTexture,
+  detectTextureExtension
+} from './texture-inspector.js';
+import {
+  projectFromFiles, projectFromZip, loadModel, modelStats, exportGlb,
+  downloadBlob, demoModel, extension
+} from './model.js';
+import {
+  parseGfpakFile, summary, extractResourceAsync, parseHashDictionary, resolvedName
+} from './gfpak.js';
+
+const el = id => document.getElementById(id);
+const state = {
+  stage: null,
+  project: null,
+  exportProject: null,
+  desktopSource: false,
+  archive: null,
+  dictionary: new Map(),
+  loaded: null,
+  resource: null,
+  busy: false,
+  textureInfo: null,
+  textureDispose: null,
+  textureRevision: 0,
+};
+
+function currentGame() { return gameById(el('gameSource').value); }
+
+function updateGameProfile() {
+  const game = currentGame();
+  el('gameEngine').textContent = game.engine.toUpperCase();
+  el('gameYear').textContent = game.year || 'ALL GAMES';
+  el('gameHint').textContent = game.hint;
+  el('activeGame').textContent = game.id === 'auto' ? 'Auto' : game.name;
+  if (state.project) displayNativeGuidance(state.project.items.map(item => item.path));
+  else if (state.archive) displayNativeGuidance([state.archive.filename]);
+}
+
+function suggestGame(names) {
+  if (el('gameSource').value !== 'auto') return;
+  const auto = detectGameFromNames(names);
+  if (auto.id !== 'auto') {
+    el('gameSource').value = auto.id;
+    log('Detected ' + auto.name + ' from filenames (you can change this selection).');
+  }
+  updateGameProfile();
+}
+
+function displayNativeGuidance(names) {
+  const description = describeSource(currentGame().id, names);
+  const hasNative = identifyFormat(names).native.length > 0;
+  const panel = el('nativeGuide');
+  panel.hidden = !hasNative;
+  if (!hasNative) return;
+  el('nativeTitle').textContent = description.title;
+  el('nativeExplanation').textContent = description.message;
+  const archiveInZip = state.project?.items.some(item => item.path.toLowerCase().endsWith('.gfpak'));
+  el('inspectPackagedArchive').hidden = !archiveInZip;
+}
+
+function initGameOptions() {
+  const picker = el('gameSource');
+  picker.replaceChildren(...GAMES.map(game => new Option(game.name, game.id)));
+  picker.value = 'auto';
+  updateGameProfile();
+}
+
+
+function updateStatus(status) {
+  el('footerStatus').textContent = status.toUpperCase();
+}
+
+function log(message, level = 'info') {
+  const row = document.createElement('div');
+  if (level === 'error') row.className = 'error';
+  const prefix = document.createElement('span');
+  prefix.textContent = '[' + (level === 'error' ? 'ERROR' : level === 'success' ? 'OK' : 'INFO') + ']';
+  row.append(prefix, document.createTextNode(String(message)));
+  el('logBody').append(row);
+  while (el('logBody').childElementCount > 100) el('logBody').firstElementChild.remove();
+  el('logBody').scrollTop = el('logBody').scrollHeight;
+  updateStatus(level === 'error' ? 'ACTION REQUIRED' : String(message).slice(0, 55));
+}
+
+function errorMessage(err) {
+  log(err?.message || String(err), 'error');
+  console.error(err);
+}
+
+function busy(value, title = 'Processing assets', message = '') {
+  state.busy = value;
+  el('busyOverlay').hidden = !value;
+  el('busyTitle').textContent = title;
+  el('busyMessage').textContent = message;
+  el('exportButton').disabled = value || !state.loaded;
+  el('exportPokemonButton').disabled = value || !state.loaded || (!state.exportProject && !state.desktopSource);
+  el('loadSelected').disabled = value || !state.project?.models.length;
+  el('inspectSelectedTexture').disabled = value || !state.project?.items.some(item =>
+    isInspectableTexture(item.path));
+}
+
+function currentFile(text) {
+  el('currentModelTag').textContent = text.toUpperCase();
+}
+
+function updateSource(text, isLoaded = true) {
+  const summaryNode = el('sourceSummary');
+  summaryNode.lastElementChild.textContent = text;
+  summaryNode.firstElementChild.style.background = isLoaded ? '#62e0b7' : '#627d8f';
+}
+
+function showTab(which) {
+  const archive = which === 'archive';
+  el('viewerPanel').hidden = archive;
+  el('archivePanel').hidden = !archive;
+  el('tabViewer').classList.toggle('active', !archive);
+  el('tabArchive').classList.toggle('active', archive);
+  el('tabViewer').setAttribute('aria-selected', String(!archive));
+  el('tabArchive').setAttribute('aria-selected', String(archive));
+  if (!archive && state.stage) requestAnimationFrame(() => state.stage.resize());
+}
+
+function resetInspector() {
+  const defaults = ['statMeshes', 'statVertices', 'statTriangles', 'statMaterials', 'statBones', 'statClips'];
+  for (const id of defaults) el(id).textContent = '—';
+  el('objectName').textContent = 'No active object';
+  el('objectSubtitle').textContent = 'Load a 3D model to inspect its details.';
+  el('inspectorState').textContent = 'IDLE';
+  el('originalFormat').textContent = '—';
+  el('packageName').textContent = '—';
+  el('clipSelect').replaceChildren(new Option('No animations available', ''));
+  el('clipSelect').disabled = true;
+  el('toggleAnimation').disabled = true;
+  el('toggleAnimation').textContent = '▶ PLAY ANIMATION';
+  el('exportButton').disabled = true;
+  el('exportPokemonButton').disabled = true;
+  el('emptyState').hidden = false;
+}
+
+function setModel(result, format, packageName) {
+  if (!state.stage) throw new Error('WebGL is not available in this browser');
+  const previous = state.loaded;
+  state.stage.setModel(result.root, result.animations);
+  if (window.pywebview?.api) window.dispatchEvent(new CustomEvent(
+    'gfpak-desktop-model-ready', {detail:{root:result.root}}));
+  previous?.disposeAssets?.();
+  state.loaded = result;
+  const info = modelStats(result.root, result.animations);
+  const mapping = [
+    ['statMeshes', info.meshes], ['statVertices', info.vertices],
+    ['statTriangles', info.triangles], ['statMaterials', info.materials],
+    ['statBones', info.bones], ['statClips', info.clips]
+  ];
+  for (const [id, n] of mapping) el(id).textContent = Number(n).toLocaleString();
+  el('inspectorState').textContent = result.postLoad
+    ? 'IMPORTING COMPANIONS' : 'LOADED';
+  el('objectName').textContent = result.selected.split('/').pop() || result.selected;
+  el('objectSubtitle').textContent = info.meshes + ' mesh(es)' +
+    (result.postLoad
+      ? ' visible · matched textures and animations importing…'
+      : ' ready for GLB export');
+  el('originalFormat').textContent = format.replace('.', '').toUpperCase();
+  el('packageName').textContent = packageName;
+  el('activeGame').textContent = currentGame().name;
+  el('emptyState').hidden = true;
+  // Exporting before asynchronous texture/animation import completes would
+  // silently create a GLB without those linked assets.
+  el('exportButton').disabled = !!result.postLoad;
+  el('exportPokemonButton').disabled = !state.exportProject && !state.desktopSource;
+  const clean = result.selected.split('/').pop().replace(/\.(glb|gltf|fbx|obj|dae|stl|ply|3ds|gfbmdl)$/i, '') || 'model';
+  el('outputName').value = clean.slice(0, 130);
+  currentFile(result.selected.split('/').pop());
+  refreshAnimationControls(result);
+  log('Loaded ' + info.meshes + ' mesh(es)' +
+    (result.postLoad ? '; companion textures and clips are loading in the background.' :
+      ' and ' + info.clips + ' animation clip(s).'), 'success');
+}
+
+function refreshAnimationControls(result) {
+  const clips = el('clipSelect');
+  clips.replaceChildren();
+  result.animations.forEach((a, index) =>
+    clips.add(new Option(a.name || 'Animation ' + (index + 1), String(index))));
+  if (!result.animations.length) clips.add(new Option(
+    result.postLoad ? 'Animation clips loading…' : 'No animations available', ''));
+  clips.disabled = !result.animations.length;
+  el('toggleAnimation').disabled = !result.animations.length;
+  el('toggleAnimation').textContent = result.animations.length ?
+    'Ⅱ PAUSE ANIMATION' : '▶ PLAY ANIMATION';
+  el('statClips').textContent = Number(result.animations.length).toLocaleString();
+}
+
+function completeFastPreview(result) {
+  if (typeof result.postLoad !== 'function') return;
+  // Kick off auxiliary downloads only after a frame has been presented.
+  // This keeps massive animation and BNTX loads off the first-paint path.
+  requestAnimationFrame(() => window.setTimeout(() => {
+    if (state.loaded !== result) return;
+    result.postLoad().then(() => {
+      if (state.loaded !== result) return;
+      state.stage.setAnimations(result.animations);
+      refreshAnimationControls(result);
+      el('inspectorState').textContent = 'LOADED';
+      el('objectSubtitle').textContent =
+        modelStats(result.root, result.animations).meshes +
+        ' mesh(es) with decoded companion assets ready for GLB export';
+      el('exportButton').disabled = false;
+      log('Imported model textures and ' + result.animations.length +
+        ' compatible animation clip(s). Select a clip to play it.', 'success');
+    }).catch(error => {
+      if (state.loaded === result) {
+        el('inspectorState').textContent = 'PARTIAL IMPORT';
+        el('exportButton').disabled = false;
+        log('Some companion resources could not be loaded: ' +
+          (error.message || error), 'info');
+      }
+    });
+  }, 0));
+}
+
+async function openModel() {
+  if (state.busy || !state.project) return;
+  const selected = el('modelSelect').value;
+  if (!selected) return;
+  busy(true, 'Loading model', 'Reading mesh and texture resources…');
+  try {
+    const result = await loadModel(state.project, selected, message => log(message));
+    state.exportProject = state.project; state.desktopSource=false;
+    setModel(result, extension(selected), state.project.label);
+    showTab('viewer');
+  } catch (err) {
+    errorMessage(err);
+  } finally {
+    busy(false);
+  }
+}
+
+function listProjectTextures(project) {
+  return project.items.filter(item => isInspectableTexture(item.path));
+}
+
+function populateTextureSelect(project) {
+  const textures = listProjectTextures(project);
+  const select = el('textureSelect');
+  select.replaceChildren(...textures.slice(0, 1200).map(item => new Option(item.path, item.path)));
+  // A multi-row SELECT has no guaranteed default selection; otherwise a
+  // single imported BNTX appears in the list but the Inspect button does nothing.
+  if (select.options.length) select.selectedIndex = 0;
+  el('textureCount').textContent = textures.length + ' file(s)';
+  el('textureChoice').hidden = !textures.length;
+  el('inspectSelectedTexture').disabled = !textures.length;
+}
+
+function disposeTexturePreview() {
+  state.textureRevision++;
+  state.textureDispose?.();
+  state.textureDispose = null;
+  state.textureInfo = null;
+  el('textureCanvasHost').replaceChildren();
+  el('textureSavePng').disabled = true;
+}
+
+async function drawCurrentTexture() {
+  const info = state.textureInfo;
+  if (!info) return;
+  const revision = ++state.textureRevision;
+  state.textureDispose?.();
+  state.textureDispose = null;
+  el('textureSavePng').disabled = true;
+  const host = el('textureCanvasHost');
+  host.replaceChildren();
+  const index = Number(el('textureSurface').value);
+  const surface = info.surfaces[index];
+  if (!surface) return;
+  el('textureMetadata').textContent =
+    [surface.width && surface.height ? surface.width + ' × ' + surface.height : '',
+      surface.format !== undefined ? 'BNTX format 0x' + surface.format.toString(16) : '',
+      surface.mips ? surface.mips + ' mip level(s)' : ''].filter(Boolean).join(' · ');
+  el('texturePreviewStatus').textContent = 'Decoding ' + surface.name + ' locally…';
+  const canvas = document.createElement('canvas');
+  try {
+    const drawn = await drawTextureSurface(info,index,canvas);
+    if (revision !== state.textureRevision || !el('textureDialog').open) {
+      drawn.dispose();
+      return;
+    }
+    host.replaceChildren(canvas);
+    state.textureDispose = drawn.dispose;
+    el('textureSavePng').disabled = false;
+    el('textureMetadata').textContent = drawn.width + ' × ' + drawn.height +
+      (surface.format !== undefined ? ' · BNTX 0x' + surface.format.toString(16) : '');
+    el('texturePreviewStatus').textContent = 'Texture ready · ' +
+      'choose another surface or export this preview as PNG.';
+  } catch (error) {
+    if (revision === state.textureRevision)
+      el('texturePreviewStatus').textContent = String(error.message || error);
+  }
+}
+
+async function inspectSourceTexture(item) {
+  if (state.busy || !item) return false;
+  busy(true,'Opening texture','Reading a native texture without requiring a model…');
+  try {
+    if (item.size > 256 * 1024 * 1024)
+      throw new Error('Standalone texture preview is limited to 256 MiB');
+    const resource = await item.getBytes();
+    const bytes = resource instanceof Blob ? await resource.arrayBuffer() : resource;
+    const inferred = isInspectableTexture(item.path) ? null : detectTextureExtension(bytes);
+    if (!isInspectableTexture(item.path) && !inferred)
+      throw new Error('The selected resource is not a recognized BNTX/DDS/image. ' +
+        'Select a texture or supply a filename dictionary.');
+    const name = inferred ? item.path.replace(/\.[^./\\]+$/, '') + inferred : item.path;
+    const info = inspectTexture(bytes,name);
+    disposeTexturePreview();
+    state.textureInfo = info;
+    const select = el('textureSurface');
+    select.replaceChildren(...info.surfaces.map(surface => new Option(
+      surface.name + (surface.width ? ' · ' + surface.width + '×' + surface.height : ''),
+      String(surface.index)
+    )));
+    el('textureSourceName').textContent = info.filename + ' · ' +
+      info.surfaces.length + ' texture surface(s)';
+    if (!el('textureDialog').open) el('textureDialog').showModal();
+    await drawCurrentTexture();
+    log('Opened ' + item.path + ' with ' + info.surfaces.length + ' texture surface(s).','success');
+  } catch (error) { errorMessage(error); return false; }
+  finally { busy(false); }
+  return true;
+}
+
+function inspectSelectedTexture() {
+  const item = state.project?.items.find(entry => entry.path === el('textureSelect').value);
+  return inspectSourceTexture(item);
+}
+
+function filterModels() {
+  if (!state.project) return;
+  const filter = el('modelFilter').value.toLowerCase().trim();
+  const visible = state.project.models.filter(m => m.path.toLowerCase().includes(filter));
+  const select = el('modelSelect');
+  const saved = select.value;
+  const items = document.createDocumentFragment();
+  for (const file of visible.slice(0, 1200)) {
+    const opt = document.createElement('option');
+    opt.value = file.path;
+    opt.textContent = file.path.length > 95 ? '…' + file.path.slice(-94) : file.path;
+    items.append(opt);
+  }
+  select.replaceChildren(items);
+  if (visible.some(f => f.path === saved)) select.value = saved;
+  else if (select.options.length) select.selectedIndex = 0;
+  el('modelCount').textContent = visible.length + ' / ' + state.project.models.length;
+}
+
+async function chooseProject(files) {
+  if (state.busy) return;
+  if (!files.length) return;
+  busy(true, 'Reading source package', 'Scanning files and supported model formats…');
+  try {
+    const only = files.length === 1 ? files[0] : null;
+    if (only && extension(only.name) === '.gfpak') {
+      await loadArchive(only);
+      return;
+    }
+    const project = only && extension(only.name) === '.zip' ?
+      await projectFromZip(only, message => log(message)) : projectFromFiles(files);
+    state.loaded?.disposeAssets?.();
+    state.loaded = null;
+    state.stage?.clear();
+    resetInspector();
+    state.project = project;
+    state.archive = null;
+    populateTextureSelect(project);
+    suggestGame([project.label, ...project.items.map(item => item.path)]);
+    displayNativeGuidance(project.items.map(item => item.path));
+    updateSource(project.label + ' · ' + project.models.length + ' renderable model(s) · ' +
+      listProjectTextures(project).length + ' inspectable texture(s)' +
+      (project.native?.length ? ' · ' + project.native.length + ' original resource(s)' : ''));
+    el('modelChoice').hidden = !project.models.length;
+    el('modelFilter').value = '';
+    filterModels();
+    log('Imported ' + project.items.length + ' files, found ' + project.models.length + ' supported model(s).', 'success');
+    if (!project.models.length) {
+      if (listProjectTextures(project).length)
+        log('Native texture files found. Choose one under NATIVE TEXTURES for surface inspection.', 'success');
+      else {
+        const notice = describeSource(currentGame().id, project.items.map(item => item.path));
+        log(notice.title + ': ' + notice.message, notice.kind === 'native' ? 'info' : 'error');
+      }
+      showTab('viewer');
+    } else if (project.models.length === 1) {
+      // Open on the next frame, once the loading overlay has closed.
+      setTimeout(openModel, 0);
+    } else {
+      log('Choose a model in the file list, then click LOAD SELECTED MODEL.');
+      showTab('viewer');
+    }
+  } catch (err) {
+    errorMessage(err);
+  } finally {
+    busy(false);
+  }
+}
+
+async function loadArchive(file) {
+  const archive = await parseGfpakFile(file, file.name);
+  state.archive = archive;
+  state.project = null;
+  el('textureChoice').hidden = true;
+  suggestGame([file.name]);
+  displayNativeGuidance([file.name]);
+  state.resource = null;
+  state.loaded?.disposeAssets?.();
+  state.loaded = null;
+  state.stage?.clear();
+  el('modelChoice').hidden = true;
+  resetInspector();
+  updateSource(file.name + ' · ' + archive.count + ' internal resources');
+  currentFile(file.name);
+  el('archiveResources').textContent = archive.count.toLocaleString();
+  el('archiveFolders').textContent = archive.folderCount.toLocaleString();
+  el('archiveBytes').textContent = formatBytes(archive.packedBytes);
+  el('archiveCodec').textContent = Object.entries(archive.compressionTypes)
+    .map(([key, value]) => codecName(Number(key)) + ' ' + value).join(' / ');
+  el('downloadIndex').disabled = false;
+  el('downloadResource').disabled = true;
+  updateArchiveModelButton();
+  updateArchiveTextureButton();
+  el('archiveSearch').value = '';
+  renderArchiveTable();
+  showTab('archive');
+  log('Opened ' + file.name + ': ' + archive.count + ' entries in ' + archive.folderCount + ' folders.', 'success');
+  if (archive.compressionTypes['3']) {
+    log('Found ' + archive.compressionTypes['3'] + ' Oodle-compressed resources: browser extraction of those files is not supported.');
+  }
+}
+
+function usableArchiveModels() {
+  if (!state.archive) return [];
+  const nativeMeshes = new Set(['.gfbmdl', '.trmdl', '.trmsh']);
+  const names = state.archive.resources.map(resource => ({
+    resource, name: resolvedName(resource, state.dictionary) || ''
+  }));
+  const dirsWithTrmdl = new Set(names.filter(row => row.name.toLowerCase().endsWith('.trmdl'))
+    .map(row => row.name.replaceAll('\\', '/').split('/').slice(0, -1).join('/').toLowerCase()));
+  return names.filter(row => {
+    const suffix = extension(row.name);
+    if (!nativeMeshes.has(suffix)) return false;
+    if (suffix === '.trmsh') {
+      const dir = row.name.replaceAll('\\', '/').split('/').slice(0, -1).join('/').toLowerCase();
+      if (dirsWithTrmdl.has(dir)) return false;
+    }
+    return true;
+  }).map(row => row.resource);
+}
+
+function usableArchiveTextures() {
+  if (!state.archive) return [];
+  return state.archive.resources.filter(resource => {
+    const name = resolvedName(resource,state.dictionary);
+    return name && isInspectableTexture(name);
+  });
+}
+
+function updateArchiveTextureButton() {
+  const textures = usableArchiveTextures();
+  const button = el('previewArchiveTexture');
+  button.disabled = !textures.length && !state.resource;
+  button.textContent = state.resource && textures.includes(state.resource)
+    ? '▧ INSPECT SELECTED TEXTURE'
+    : state.resource ? '▧ PROBE SELECTED TEXTURE'
+      : '▧ INSPECT TEXTURES (' + textures.length + ')';
+}
+
+async function inspectArchiveTexture() {
+  if (!state.archive || state.busy) return;
+  const available = usableArchiveTextures();
+  const resource = state.resource || available[0];
+  if (!resource) {
+    log('Load the archive filename hash dictionary to identify BNTX or image entries.', 'error');
+    return;
+  }
+  const name = resolvedName(resource,state.dictionary) ||
+    'resource_' + String(resource.index).padStart(4,'0') + '.bin';
+  // Capture the selected archive before yielding to the asynchronous extractor.
+  // An unbound sourceArchive prevented anonymous GFPAK textures from opening.
+  const sourceArchive = state.archive;
+  await inspectSourceTexture({
+    path:name,size:resource.size,
+    getBytes:async()=>extractResourceAsync(sourceArchive,resource)
+  });
+}
+
+function updateArchiveModelButton() {
+  const candidates = usableArchiveModels();
+  const selected = state.resource;
+  const preview = el('previewArchiveModel');
+  preview.disabled = !candidates.length;
+  preview.textContent = selected && candidates.includes(selected)
+    ? '◈ PREVIEW SELECTED 3D MESH'
+    : '◈ PREVIEW NATIVE 3D MESH (' + candidates.length + ')';
+}
+
+async function previewGfbmdlInArchive() {
+  if (!state.archive || state.busy) return;
+  const models = usableArchiveModels();
+  const selectedResource = models.includes(state.resource) ? state.resource : models[0];
+  if (!selectedResource) {
+    log('Load a matching hash dictionary identifying .gfbmdl or .trmdl resources inside the GFPAK.', 'error');
+    return;
+  }
+  const name = resolvedName(selectedResource, state.dictionary);
+  const allowed = new Set(['.gfbmdl', '.trmdl', '.trmsh', '.trmbf', '.trskl', '.trmtr',
+    '.tranm', '.gfbanm', '.tracm', '.png', '.jpg', '.jpeg', '.webp', '.bntx', '.dds']);
+  // Deferred extraction avoids decompressing unrelated resources. Every
+  // associated file is resolved by its original path/hash dictionary entry.
+  const resources = state.archive.resources
+    .map(resource => ({resource, name: resolvedName(resource, state.dictionary)}))
+    .filter(item => item.name && allowed.has(extension(item.name)));
+  const project = {
+    label: state.archive.filename,
+    items: resources.map(({resource, name: path}) => ({
+      path,
+      size: resource.size,
+      getBytes: async () => {
+        const raw = await extractResourceAsync(state.archive, resource);
+        return raw instanceof Blob
+          ? raw.arrayBuffer()
+          : raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength);
+      }
+    }))
+  };
+  busy(true, 'Decoding archive model', 'Resolving companion model resources locally…');
+  try {
+    const result = await loadModel(project, name, message => log(message));
+    const sourceArchive = state.archive, sourceDictionary = state.dictionary;
+    state.exportProject = {items:sourceArchive.resources.map(resource => ({
+      path:resolvedName(resource,sourceDictionary) || resource.index+'_'+resource.pathHash+'.bin',
+      getBytes:async()=>extractResourceAsync(sourceArchive,resource)
+    }))}; state.desktopSource=false;
+    setModel(result, extension(name), state.archive.filename);
+    showTab('viewer');
+    log(name + ' decoded into real meshes inside this browser.', 'success');
+  } catch (error) {
+    errorMessage(error);
+  } finally {
+    busy(false);
+  }
+}
+
+function codecName(c) { return c === 0 ? 'Stored' : c === 2 ? 'LZ4' : c === 3 ? 'Oodle' : 'Type ' + c; }
+function formatBytes(n) {
+  if (!Number.isFinite(n)) return '—';
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+  if (n < 1073741824) return (n / 1048576).toFixed(1) + ' MB';
+  return (n / 1073741824).toFixed(2) + ' GB';
+}
+function validResourceName(name) { return name.replace(/[/\\:*?"<>|]+/g, '_').slice(-160); }
+
+function renderArchiveTable() {
+  const body = el('archiveTableBody');
+  body.replaceChildren();
+  if (!state.archive) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 6;
+    td.textContent = 'Open a .gfpak to inspect its internal resources.';
+    td.className = 'table-empty';
+    tr.append(td); body.append(tr); return;
+  }
+  const needle = el('archiveSearch').value.toLowerCase().trim();
+  const all = state.archive.resources.filter(r => !needle ||
+    String(r.index).includes(needle) || r.pathHash.includes(needle) ||
+    (r.fileHash && r.fileHash.includes(needle)) ||
+    (resolvedName(r, state.dictionary) || '').toLowerCase().includes(needle));
+  const visible = all.slice(0, 1500);
+  const fragment = document.createDocumentFragment();
+  for (const r of visible) {
+    const tr = document.createElement('tr');
+    tr.dataset.index = String(r.index);
+    if (state.resource?.index === r.index) tr.className = 'selected';
+    const name = resolvedName(r, state.dictionary) || r.pathHash;
+    const values = [String(r.index).padStart(4, '0'), r.folder == null ? '—' : String(r.folder).padStart(2, '0'), name,
+      codecName(r.compression), formatBytes(r.packedSize), formatBytes(r.size)];
+    for (const [i, value] of values.entries()) {
+      const td = document.createElement('td');
+      td.textContent = value;
+      if (i === 3) td.className = r.compression === 3 ? 'code-oodle' : r.compression === 2 ? 'code-lz4' : '';
+      td.title = value;
+      tr.append(td);
+    }
+    tr.addEventListener('click', () => {
+      state.resource = r;
+      body.querySelectorAll('tr.selected').forEach(row => row.classList.remove('selected'));
+      tr.classList.add('selected');
+      el('downloadResource').disabled = false;
+      updateArchiveModelButton();
+      updateArchiveTextureButton();
+      log('Selected resource ' + r.index + ' (' + codecName(r.compression) + ').');
+    });
+    fragment.append(tr);
+  }
+  body.append(fragment);
+  updateArchiveModelButton();
+  updateArchiveTextureButton();
+  el('archiveRowCount').textContent = visible.length.toLocaleString() + ' of ' + all.length.toLocaleString() +
+    (all.length > visible.length ? ' matching resources (first 1,500 shown)' : ' matching resources');
+}
+
+async function readHashFile(file) {
+  try {
+    const text = await file.text();
+    state.dictionary = parseHashDictionary(text, extension(file.name) === '.json');
+    el('hashStatus').textContent = 'Loaded ' + state.dictionary.size + ' hash mappings from ' + file.name;
+    log('Loaded filename dictionary ' + file.name + ' (' + state.dictionary.size + ' entries).', 'success');
+    renderArchiveTable();
+    const models = usableArchiveModels();
+    if (models.length) log('Identified ' + models.length + ' GFBMDL model resource(s). Use PREVIEW 3D MESH to decode compatible uncompressed or LZ4 data.', 'success');
+  } catch (err) { errorMessage(err); }
+}
+
+async function downloadSelectedResource() {
+  if (!state.archive || !state.resource) return;
+  try {
+    const packed = el('savePacked').checked;
+    const data = await extractResourceAsync(state.archive, state.resource, { packed });
+    const sourceName = resolvedName(state.resource, state.dictionary) ||
+      String(state.resource.index).padStart(4, '0') + '_' + state.resource.pathHash + '.bin';
+    downloadBlob(validResourceName(sourceName) + (packed ? '.packed' : ''), data);
+    log('Exported resource ' + state.resource.index + (packed ? ' as compressed bytes.' : ' as decoded bytes.'), 'success');
+  } catch (err) { errorMessage(err); }
+}
+
+async function exportModel() {
+  if (!state.loaded || state.busy) return;
+  busy(true, 'Exporting GLB', 'Packing geometry, textures and available animation data…');
+  try {
+    const name = (el('outputName').value.trim() || 'converted-model').replace(/[\\/:*?"<>|]/g, '_') + '.glb';
+    const detail = {resume:() => {}};
+    if (window.pywebview?.api) window.dispatchEvent(new CustomEvent('gfpak-desktop-export-begin', {detail}));
+    let data;
+    try { data = await exportGlb(state.loaded.root, state.loaded.animations); }
+    finally { detail.resume(); }
+    downloadBlob(name, data, 'model/gltf-binary');
+    log('Exported ' + name + ' (' + formatBytes(data.byteLength) + ').', 'success');
+  } catch (err) {
+    errorMessage(err);
+  } finally {
+    busy(false);
+  }
+}
+
+async function preparePokemonExport() {
+  const loaded = state.loaded;
+  if (!loaded) throw new Error('Preview the Pokémon before exporting.');
+  await loaded.postLoad?.();
+  if (state.loaded !== loaded) throw new Error('Model changed during export; try again.');
+  const detail = {resume:() => {}};
+  if (window.pywebview?.api) window.dispatchEvent(new CustomEvent('gfpak-desktop-export-begin', {detail}));
+  let glb;
+  try { glb = await exportGlb(loaded.root, loaded.animations); }
+  finally { detail.resume(); }
+  const metadata = pokemonExportMetadata(loaded.selected,currentGame().id,glb);
+  return {glb,metadata};
+}
+
+async function exportPokemon() {
+  if (!state.loaded || state.busy) throw new Error('3D viewer is busy or has no Pokémon loaded.');
+  busy(true,'Exporting Pokémon','Packing model, textures, skeleton and animations…');
+  try {
+    const {glb,metadata} = await preparePokemonExport();
+    if (state.desktopSource) {
+      // Keep the native streaming exporter for all original and unknown assets.
+      const bytes = new Uint8Array(glb);
+      const chunks = [];
+      for (let i=0;i<bytes.length;i+=32768)
+        chunks.push(String.fromCharCode(...bytes.subarray(i,i+32768)));
+      await new Promise((resolve,reject) => {
+        window.dispatchEvent(new CustomEvent('gfpak-export-pokemon', {detail:{
+          glbBase64:btoa(chunks.join('')),metadata,
+          finish:(error)=>error ? reject(new Error(error)) : resolve()
+        }}));
+      });
+    } else {
+      const blob = await exportPokemonZip(state.exportProject,state.loaded.selected,
+        {glb,sourceGame:metadata.sourceGame});
+      const name = state.loaded.selected.split('/').at(-1).replace(/\.[^.]+$/,'')+'.zip';
+      downloadBlob(name,blob,'application/zip');
+      log('Exported '+name+' with original assets and the Pokédex GLB.','success');
+    }
+  } finally {busy(false);}
+}
+
+function addDemo() {
+  if (state.busy) return;
+  state.project = null;
+  state.exportProject = null; state.desktopSource=false;
+  state.archive = null;
+  el('modelChoice').hidden = true;
+  el('textureChoice').hidden = true;
+  el('nativeGuide').hidden = true;
+  updateSource('Built-in geometric demo model');
+  setModel(demoModel(), '.glb', 'Built-in demo');
+  el('outputName').value = 'gfpak-demo';
+  showTab('viewer');
+}
+
+function attachEvents() {
+  el('gameSource').addEventListener('change', updateGameProfile);
+  el('inspectPackagedArchive').addEventListener('click', async () => {
+    const item = state.project?.items.find(entry => entry.path.toLowerCase().endsWith('.gfpak'));
+    if (!item) return;
+    try {
+      const blob = new Blob([await item.getBytes()]);
+      const file = Object.assign(blob, {name: item.path.split('/').pop()});
+      await loadArchive(file);
+    } catch (error) { errorMessage(error); }
+  });
+  el('chooseFiles').addEventListener('click', event => { event.stopPropagation(); el('fileInput').click(); });
+  el('dropZone').addEventListener('click', event => {
+    if (event.target.closest('button')) return;
+    el('fileInput').click();
+  });
+  el('dropZone').addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); el('fileInput').click(); }
+  });
+  el('chooseFolder').addEventListener('click', () => el('folderInput').click());
+  el('fileInput').addEventListener('change', event => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    chooseProject(files);
+  });
+  el('folderInput').addEventListener('change', event => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    chooseProject(files);
+  });
+  el('dropZone').addEventListener('dragover', event => {
+    event.preventDefault(); el('dropZone').classList.add('drag-over');
+  });
+  el('dropZone').addEventListener('dragleave', () => el('dropZone').classList.remove('drag-over'));
+  el('dropZone').addEventListener('drop', event => {
+    event.preventDefault(); el('dropZone').classList.remove('drag-over');
+    chooseProject(Array.from(event.dataTransfer?.files ?? []));
+  });
+  document.addEventListener('dragover', event => event.preventDefault());
+  document.addEventListener('drop', event => event.preventDefault());
+  el('demoButton').addEventListener('click', addDemo);
+  el('emptyDemo').addEventListener('click', addDemo);
+  el('modelFilter').addEventListener('input', filterModels);
+  el('modelSelect').addEventListener('dblclick', openModel);
+  el('loadSelected').addEventListener('click', openModel);
+  el('textureSelect').addEventListener('dblclick', inspectSelectedTexture);
+  el('inspectSelectedTexture').addEventListener('click', inspectSelectedTexture);
+  el('textureSurface').addEventListener('change', drawCurrentTexture);
+  el('textureClose').addEventListener('click', () => el('textureDialog').close());
+  el('textureDialog').addEventListener('close', disposeTexturePreview);
+  el('textureSavePng').addEventListener('click', () => {
+    const canvas = el('textureCanvasHost').querySelector('canvas');
+    if (!canvas || !state.textureInfo) return;
+    const fileName = texturePngName(state.textureInfo, Number(el('textureSurface').value));
+    canvas.toBlob(blob => {
+      if (blob) {
+        downloadBlob(fileName,blob,'image/png');
+        log('Exported decoded texture image ' + fileName, 'success');
+      } else log('Could not encode this preview as PNG.','error');
+    },'image/png');
+  });
+  el('exportButton').addEventListener('click', exportModel);
+  el('exportPokemonButton').addEventListener('click', async () => {
+    try {await exportPokemon();} catch(error) {errorMessage(error);}
+  });
+  el('tabViewer').addEventListener('click', () => showTab('viewer'));
+  el('tabArchive').addEventListener('click', () => showTab('archive'));
+  el('gridToggle').addEventListener('change', event => state.stage?.setGrid(event.target.checked));
+  el('spinToggle').addEventListener('change', event => state.stage?.setSpin(event.target.checked));
+  el('axesToggle').addEventListener('change', event => state.stage?.setAxes(event.target.checked));
+  el('viewReset').addEventListener('click', () => state.stage?.frame());
+  el('frameModel').addEventListener('click', () => state.stage?.frame());
+  el('clipSelect').addEventListener('change', event => {
+    if (!state.stage) return;
+    const playing = state.stage.playAnimation(Number(event.target.value));
+    el('toggleAnimation').textContent = playing ? 'Ⅱ PAUSE ANIMATION' : '▶ PLAY ANIMATION';
+  });
+  el('toggleAnimation').addEventListener('click', () => {
+    if (!state.stage) return;
+    const playing = state.stage.toggleAnimation(Number(el('clipSelect').value) || 0);
+    el('toggleAnimation').textContent = playing ? 'Ⅱ PAUSE ANIMATION' : '▶ PLAY ANIMATION';
+  });
+  el('archiveSearch').addEventListener('input', renderArchiveTable);
+  el('previewArchiveModel').addEventListener('click', previewGfbmdlInArchive);
+  el('previewArchiveTexture').addEventListener('click', inspectArchiveTexture);
+  el('chooseHashes').addEventListener('click', () => el('hashInput').click());
+  el('hashInput').addEventListener('change', event => {
+    if (event.target.files?.[0]) readHashFile(event.target.files[0]);
+    event.target.value = '';
+  });
+  el('downloadIndex').addEventListener('click', () => {
+    if (!state.archive) return;
+    const data = JSON.stringify(summary(state.archive), null, 2);
+    downloadBlob(state.archive.filename.replace(/\.gfpak$/i, '') + '_index.json', data, 'application/json');
+    log('Saved GFPAK metadata index.', 'success');
+  });
+  el('downloadResource').addEventListener('click', downloadSelectedResource);
+  el('clearLog').addEventListener('click', () => el('logBody').replaceChildren());
+}
+
+async function openFastDesktopPreview(detail) {
+  const finished = typeof detail?.finish === 'function' ? detail.finish : () => {};
+  if (state.busy || !state.stage) {
+    finished(false, '3D viewer is currently busy or unavailable');
+    return;
+  }
+  busy(true, 'Fast native 3D preview', 'Loading only the model components needed for rendering…');
+  try {
+    const manifest = detail.manifest;
+    if (!manifest?.selected || !manifest.items?.length)
+      throw new Error('Native preview manifest is missing files');
+    const cached = new Map();
+    const project = {
+      label: manifest.label || 'Game File Explorer',
+      items: manifest.items.map(item => {
+        const getBytes = async () => {
+          if (!cached.has(item.url)) {
+            cached.set(item.url, (async () => {
+              const response = await fetch(item.url, {cache:'no-store'});
+              if (!response.ok)
+                throw new Error('Model resource ' + item.path + ' could not be read (' +
+                  response.status + ')');
+              return response.arrayBuffer();
+            })());
+          }
+          return cached.get(item.url);
+        };
+        return {
+          path:item.path, size:item.size, getBytes,
+          linkedKind:item.linkedKind || null,
+          matchConfidence:item.matchConfidence || null,
+          matchReason:item.matchReason || '',
+          getText:async () => new TextDecoder().decode(await getBytes())
+        };
+      })
+    };
+    if (manifest.matched && Object.keys(manifest.matched).length) {
+      const linked = Object.entries(manifest.matched)
+        .filter(([,count]) => count > 0)
+        .map(([kind,count]) => count + ' ' + kind + (count !== 1 ? 's' : ''));
+      log('Model-linked assets detected: ' + linked.join(', ') +
+        '. Importing compatible textures and animations automatically.');
+    }
+    const result = await loadModel(project, manifest.selected,
+      message => log(message), {fastPreview:true});
+    state.exportProject = project; state.desktopSource=true;
+    setModel(result, extension(manifest.selected), project.label);
+    if (window.pywebview?.api) window.dispatchEvent(new CustomEvent(
+      'gfpak-desktop-effect-inventory', {detail:manifest.effects || null}));
+    // The desktop explorer is a separate tab; make the loaded 3D viewport
+    // actually visible instead of leaving it obscured behind File Explorer.
+    el('assetBrowser').hidden = true;
+    el('desktopTools').hidden = true;
+    el('tabAssets').classList.remove('active');
+    el('tabAssets').setAttribute('aria-selected', 'false');
+    el('tabConverter').classList.remove('active');
+    el('tabConverter').setAttribute('aria-selected', 'false');
+    showTab('viewer');
+    log('Fast native geometry preview loaded without launching Blender.', 'success');
+    finished(true);
+    completeFastPreview(result);
+  } catch (error) {
+    log('Native 3D preview failed: ' + (error.message || String(error)) +
+      '. The source assets may still be exported without rendering.', 'info');
+    finished(false, error.message || String(error));
+  } finally {
+    busy(false);
+  }
+}
+
+function start() {
+  window.gfpakFastPreviewAvailable = true;
+  window.gfpakFastTextureAvailable = true;
+  window.addEventListener('gfpak-request-pokemon-export', event => {
+    exportPokemon().then(()=>event.detail?.finish?.())
+      .catch(error=>event.detail?.finish?.(error.message || String(error)));
+  });
+  window.addEventListener('gfpak-fast-native-texture', event => {
+    const info = event.detail?.manifest;
+    if (!info?.url || !info?.path) {
+      event.detail?.finish?.(false, 'Invalid texture source');
+      return;
+    }
+    inspectSourceTexture({
+      path:info.path, size:info.size,
+      getBytes:async () => {
+        const response = await fetch(info.url, {cache:'no-store'});
+        if (!response.ok) throw new Error('Texture request failed (' + response.status + ')');
+        return response.arrayBuffer();
+      }
+    }).then(success => event.detail?.finish?.(success !== false))
+      .catch(error => event.detail?.finish?.(false,error.message));
+  });
+  window.addEventListener('gfpak-fast-native-preview', event =>
+    openFastDesktopPreview(event.detail).catch(error =>
+      event.detail?.finish?.(false, error.message || String(error))
+    ));
+  window.addEventListener('gfpak-native-model', event => {
+    if (event.detail instanceof File) chooseProject([event.detail]);
+  });
+  initGameOptions();
+  attachEvents();
+  resetInspector();
+  try {
+    state.stage = new ModelStage(el('canvasHost'));
+    state.stage.setGrid(el('gridToggle').checked);
+    log('3D renderer initialized. Files stay entirely on your device.', 'success');
+  } catch (err) {
+    errorMessage(new Error('3D preview cannot start: ' + err.message));
+    el('exportButton').disabled = true;
+    el('emptyState').querySelector('p').textContent = 'This browser or device does not currently support WebGL. You can still inspect GFPak archives.';
+  }
+  window.addEventListener('beforeunload', () => {
+    state.loaded?.disposeAssets?.();
+    state.stage?.dispose();
+    disposeTexturePreview();
+  });
+}
+
+start();
