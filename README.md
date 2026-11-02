@@ -11,6 +11,7 @@
 - Orbit, pan, zoom, frame the model, show a grid/axes, toggle wireframe and auto-rotate
 - Play detected animations and inspect mesh, vertex, triangle, material, texture and bone counts
 - Generate a **downloadable JSON quality report**, checking for missing normals/UVs, invalid positions, empty scenes and large triangle budgets
+- Run **batch reports for up to 25 models at a time**, exporting one consolidated JSON file
 - Preview supported source image textures, export actual GLB geometry and materials, and save PNG viewport captures
 - Operate **entirely in the browser**; user assets are not uploaded to an application server
 
