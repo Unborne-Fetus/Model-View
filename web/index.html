@@ -23,12 +23,13 @@
     </nav>
     <span class="privacy"><span class="dot"></span> Files stay on your device</span>
   </header>
+  <aside class="ad-placeholder ad-inline" data-ad-slot="intro-banner" aria-label="Future advertising placement"><span class="ad-label">FUTURE AD PLACEMENT</span><span class="ad-description">Advertising is not active</span></aside>
   <div class="intro">
     <div><span class="eyebrow">OPEN, INSPECT, VALIDATE, EXPORT</span>
       <h1>Know your <em>3D models.</em></h1>
       <p>Preview meshes and animations, spot common geometry problems, and export GLB files. No account, upload, or remote conversion server.</p>
     </div>
-    <div class="format-strip" aria-label="Supported formats"><span>GLB</span><span>glTF</span><span>FBX</span><span>OBJ</span><span>DAE</span><span>STL</span><span>PLY</span><span>3DS</span></div>
+    <div class="format-strip" aria-label="Supported formats"><span>GLB</span><span>glTF</span><span>FBX</span><span>OBJ</span><span>DAE</span><span>STL</span><span>PLY</span><span>3DS</span><span>GFBMDL</span><span>TRMDL</span></div>
   </div>
 
   <!-- Ad placements are intentionally inert until a network has approved this site. -->
@@ -49,7 +50,7 @@
         <button type="button" id="openFolder" class="text-action">＋ Import folder</button>
         <button type="button" id="tryDemo" class="text-action">◇ Try a demo</button>
       </div>
-      <input type="file" id="filesInput" accept=".glb,.gltf,.fbx,.obj,.dae,.stl,.ply,.3ds,.zip,.mtl,.bin,.png,.jpg,.jpeg,.webp,.bmp,.tga,.dds,.ktx2" multiple hidden>
+      <input type="file" id="filesInput" accept=".glb,.gltf,.fbx,.obj,.dae,.stl,.ply,.3ds,.gfbmdl,.trmdl,.trmsh,.zip,.mtl,.bin,.png,.jpg,.jpeg,.webp,.bmp,.tga,.dds,.ktx2" multiple hidden>
       <input type="file" id="folderInput" webkitdirectory directory multiple hidden>
       <div class="import-status" id="importStatus" role="status" aria-live="polite">No files loaded yet.</div>
 
@@ -94,6 +95,7 @@
         <label><input type="checkbox" id="spinToggle"> Auto rotate</label>
         <label><input type="checkbox" id="wireToggle"> Wireframe</label>
       </div>
+  <aside class="ad-placeholder ad-inline" data-ad-slot="editor-break" aria-label="Future advertising placement"><span class="ad-label">FUTURE AD PLACEMENT</span><span class="ad-description">Advertising is not active</span></aside>
       <section class="studio-panel" id="editorPanel" aria-labelledby="editorHeading">
         <div class="panel-heading"><span class="eyebrow">EDIT / MODELS</span><h2 id="editorHeading">Mesh editor</h2>
           <p>Choose a mesh, change its transform and apply. Export GLB to keep edits.</p></div>
@@ -134,6 +136,7 @@
         <div class="export-controls"><input type="text" id="outputName" class="field" value="model" aria-label="Export filename">
           <button id="exportGlb" class="button primary" type="button" disabled>Export GLB ↓</button></div>
       </div>
+  <aside class="ad-placeholder ad-inline" data-ad-slot="print-break" aria-label="Future advertising placement"><span class="ad-label">FUTURE AD PLACEMENT</span><span class="ad-description">Advertising is not active</span></aside>
       <section class="studio-panel" id="printPanel" aria-labelledby="printHeading">
         <div class="panel-heading"><span class="eyebrow">3D PRINT / EXPERIMENTAL</span><h2 id="printHeading">Layer slicer &amp; supports</h2>
           <p>Preview geometric cross-sections and export an STL with optional vertical supports.</p></div>
