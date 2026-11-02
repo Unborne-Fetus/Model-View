@@ -52,7 +52,7 @@ test('slice solid cube into real layers, preview SVG and download STL',async ({p
   await expect(page.locator('#sliceViewer')).toBeVisible();
   await expect(page.locator('#printResult')).toContainText('10 layers');
   await expect(page.locator('#sliceIndex')).toContainText('loops');
-  await page.locator('#sliceLayer').fill('4');
+  await page.locator('#sliceLayer').evaluate(el => {el.value='4';el.dispatchEvent(new Event('input',{bubbles:true}));});
   await expect(page.locator('#sliceIndex')).toContainText('5 / 10');
   const svg=page.waitForEvent('download');
   await page.locator('#saveSlice').click();
