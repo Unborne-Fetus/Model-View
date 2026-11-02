@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import {editableMeshes,meshSnapshot,applyMeshEdit,applySnapshot,addPrimitive,duplicateMesh,removeEditableMesh} from '../src/model-editor.js';
-import {extractPrintMesh,contoursAt,slicePreview,generateSupports,exportPrintStl,sliceSvg} from '../src/print-tools.js';
+import {extractPrintMesh,contoursAt,slicePreview,generateSupports,exportPrintStl,sliceSvg,topologyReport} from '../src/print-tools.js';
 
 const cube=()=>new THREE.Mesh(new THREE.BoxGeometry(10,10,10),new THREE.MeshStandardMaterial());
 test('editable mesh transform, duplicate, new geometry and deletion',()=>{
@@ -26,6 +26,7 @@ test('slicing a closed cube produces closed XY loops and finite STL',()=>{
   const mesh=extractPrintMesh(root);
   assert.equal(mesh.triangleCount,12);
   assert.deepEqual(mesh.dimensions,[10,10,10]);
+  assert.deepEqual(topologyReport(mesh),{boundaryEdges:0,nonManifoldEdges:0,isClosed:true});
   const preview=slicePreview(mesh,1);
   assert.equal(preview.count,10);
   const section=contoursAt(mesh,5);
@@ -56,4 +57,12 @@ test('optional supports can be generated for an elevated horizontal overhang',()
   assert.ok(candidates.every(s=>s.to>s.from&&Number.isFinite(s.x)));
   const stl=exportPrintStl(mesh,candidates);
   assert.ok(stl.byteLength>100);
+});
+
+test('open mesh is correctly reported as non-watertight',()=>{
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.Float32BufferAttribute([0,0,0,10,0,0,0,10,10],3));
+  const report=topologyReport(extractPrintMesh(new THREE.Mesh(geo,new THREE.MeshBasicMaterial())));
+  assert.equal(report.isClosed,false);
+  assert.equal(report.boundaryEdges,3);
 });
