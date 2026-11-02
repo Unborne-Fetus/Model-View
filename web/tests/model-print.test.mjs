@@ -66,3 +66,16 @@ test('open mesh is correctly reported as non-watertight',()=>{
   assert.equal(report.isClosed,false);
   assert.equal(report.boundaryEdges,3);
 });
+
+test('editing a shared material changes only the selected mesh',()=>{
+  const root=new THREE.Group(),shared=new THREE.MeshStandardMaterial({color:'#445566'});
+  const first=new THREE.Mesh(new THREE.BoxGeometry(2,2,2),shared);
+  const second=new THREE.Mesh(new THREE.BoxGeometry(2,2,2),shared);
+  root.add(first,second);
+  const snapshot=meshSnapshot(first);
+  applyMeshEdit(first,{position:[0,0,0],rotation:[0,0,0],scale:[1,1,1],visible:true,color:'#112233'});
+  assert.equal(first.material.color.getHexString(),'112233');
+  assert.equal(second.material.color.getHexString(),'445566');
+  applySnapshot(first,snapshot);
+  assert.equal(first.material.color.getHexString(),'445566');
+});
