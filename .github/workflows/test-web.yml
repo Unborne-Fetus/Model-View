@@ -1,4 +1,4 @@
-name: Test Browser Converter
+name: Test Model View Browser Studio
 
 on:
   push:
@@ -27,11 +27,11 @@ jobs:
           node-version-file: .nvmrc
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
-      - name: Test JavaScript parsers and lazy GFPAK resource extraction
+      - name: Test model inspection and legacy parsers
         run: npm test
       - name: Install Playwright browser
         run: npx playwright install chromium --with-deps
-      - name: Test 3D demo, OBJ ZIP import and GFPAK archive
+      - name: Smoke test Model View import, validation and export
         run: npx playwright test
       - name: Upload failure screenshots if any
         if: failure()
