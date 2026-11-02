@@ -12,11 +12,13 @@
 - Play detected animations and inspect mesh, vertex, triangle, material, texture and bone counts
 - Generate a **downloadable JSON quality report**, checking for missing normals/UVs, invalid positions, empty scenes and large triangle budgets
 - Run **batch reports for up to 25 models at a time**, exporting one consolidated JSON file
+- Edit mesh objects: change position, rotation, scale, visibility and material colors; add box/sphere/cylinder primitives; duplicate/delete and undo edits
+- Preview geometric **3D-print cross-sections** with configurable layer height and units; optionally generate simple vertical support columns and export individual SVG slices or a binary **STL with supports**
 - Preview supported source image textures, export actual GLB geometry and materials, and save PNG viewport captures
 - Operate **entirely in the browser**; user assets are not uploaded to an application server
 - Reserved, inert banner and below-workspace ad spaces for a later approved advertising integration
 
-The tool intentionally does not claim to repair all models or guarantee visually perfect exports. Some formats, shader features, compressed textures, proprietary engines and skeletal animation variants cannot be preserved by open-source loaders. Only files for which you have appropriate rights should be imported or redistributed.
+**Printing scope:** This is an experimental geometric slice preview, not a complete FDM slicer. It does not generate G-code, perimeters/infill toolpaths, printer profiles, or collision-safe tree supports. Choose model units carefully. For actual printing, open the STL in a mature slicer and inspect supports, orientations and the toolpath.\n\nThe tool intentionally does not claim to repair all models or guarantee visually perfect exports. Some formats, shader features, compressed textures, proprietary engines and skeletal animation variants cannot be preserved by open-source loaders. Only files for which you have appropriate rights should be imported or redistributed.
 
 ## Quick start
 
