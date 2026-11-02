@@ -42,7 +42,7 @@ The general-purpose homepage is now `web/index.html` and `web/src/model-view-mai
 
 **Optional legacy tools:** `web/legacy.html` preserves the original game-format archive explorer, specialized mesh/texture decoders and desktop Blender-assisted converter. These tools remain in the repository to avoid losing working features, but they are not the default commercial product. The legacy Python implementation retains the internal package name `gfpak_open` so its imports and regression tests continue to work. See [archived documentation](docs/LEGACY_GFPAK.md) for its existing format support and limitations.
 
-To build the Windows portable asset tools, run `run.bat` on Windows. That version opens the **legacy specialized tools** rather than the new general web studio. The web app works without Windows, Python, Blender, or a game file.
+To build the Windows portable asset tools, run `run.bat` on Windows. That version opens the **new general Model View studio** by default, with optional legacy tools accessible from the top navigation. The web app works without Windows, Python, Blender, or a game file.
 
 ## Privacy and safety
 
