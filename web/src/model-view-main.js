@@ -177,45 +177,80 @@ async function previewTexture() {
     $('textureView').hidden=false;
   }catch(error){status('Unable to preview texture: '+error.message,true)}
 }
-async function openSelected() {
-  const project=state.project,selected=$('modelSelect').value;
-  if(!project||!selected||state.busy||!state.stage)return;
-  const token=++state.selectionToken;
-  setBusy(true,'Loading mesh, materials and animations…');
+/** Load the selected model, or an explicit path for automatic single-file import. */
+async function openSelected(preferredPath = null) {
+  const project = state.project;
+  const selected = typeof preferredPath === 'string' ? preferredPath : $('modelSelect').value;
+  if (!project || !selected || state.busy) return false;
+  if (!state.stage) {
+    status('3D rendering is unavailable in this browser. Enable WebGL or try another browser.', true);
+    return false;
+  }
+  const token = ++state.selectionToken;
+  setBusy(true, 'Loading mesh, materials and animations…');
   try {
-    const result=await loadModel(project,selected,message=>status(message));
-    if(token!==state.selectionToken){result.disposeAssets?.();return;}
-    showResult(result,extension(selected));
-  } catch(error) {
-    status('Could not load model: '+(error.message||error),true);
-  } finally {setBusy(false)}
+    const result = await loadModel(project, selected, message => status(message));
+    if (token !== state.selectionToken || project !== state.project) {
+      result.disposeAssets?.();
+      return false;
+    }
+    showResult(result, extension(selected));
+    return true;
+  } catch (error) {
+    status('Could not load ' + selected + ': ' + (error.message || error), true);
+    return false;
+  } finally {
+    setBusy(false);
+  }
 }
+
+/** Import selected files once, then open the only supported model automatically. */
 async function importFiles(fileList) {
-  const files=Array.from(fileList||[]);
-  if(!files.length||state.busy)return;
-  setBusy(true,'Inspecting selected files…');
+  // Snapshot before clearing the native file picker (particularly important in Safari).
+  const files = Array.from(fileList || []);
+  if (!files.length || state.busy) return;
+  setBusy(true, 'Inspecting selected files…');
+  let singleModel = null;
+  let completed = false;
   try {
-    const project=files.length===1&&extension(files[0].name)==='.zip'?
-      await projectFromZip(files[0],message=>status(message)):projectFromFiles(files);
+    const project = files.length === 1 && extension(files[0].name) === '.zip'
+      ? await projectFromZip(files[0], message => status(message))
+      : projectFromFiles(files);
+    const normal = project.models.filter(row => COMMON.has(extension(row.path)));
+    const native = project.models.length - normal.length;
     resetLoaded();
-    state.project=project;
+    state.project = project;
     refreshTextures();
-    $('modelPicker').hidden=false;
-    $('modelSearch').value='';
+    $('modelPicker').hidden = !normal.length;
+    $('modelSearch').value = '';
     filterModels();
-    const normal=project.models.filter(x=>COMMON.has(extension(x.path)));
-    const native=project.models.length-normal.length;
     $('importStatus').classList.remove('error');
-    $('importStatus').textContent=project.items.length+' files · '+normal.length+' standard model(s) · '+
-      (project.items.filter(x=>IMAGE.has(extension(x.path))).length)+' image texture(s)'+
-      (native?' · '+native+' specialized model(s) (legacy tools)':'');
-    status(normal.length?'Choose a model to preview.':'No standard 3D model found. Try GLB, glTF, FBX, OBJ, DAE, STL, PLY, or 3DS.');
-  } catch(error) {
+    $('importStatus').textContent = project.items.length + ' file(s) · ' + normal.length +
+      ' standard model(s) · ' + project.items.filter(row => IMAGE.has(extension(row.path))).length +
+      ' image texture(s)' + (native ? ' · ' + native + ' specialized model(s) (legacy tools)' : '');
+    singleModel = normal.length === 1 ? normal[0].path : null;
+    if (singleModel) {
+      // Native select elements may have no initial selectedIndex in some browsers.
+      $('modelSelect').value = singleModel;
+      status('Found ' + singleModel + '. Opening 3D preview…');
+    } else if (normal.length) {
+      status('Choose one of the ' + normal.length + ' models, then select Load model.');
+    } else {
+      status('No supported standard 3D model found. Try GLB, glTF, FBX, OBJ, DAE, STL, PLY or 3DS.', true);
+    }
+    completed = true;
+  } catch (error) {
+    state.project = null;
+    $('modelPicker').hidden = true;
+    $('texturePicker').hidden = true;
     $('importStatus').classList.add('error');
-    $('importStatus').textContent='Import failed: '+error.message;
-    status('Import failed: '+error.message,true);
-  } finally {setBusy(false)}
-  if(state.project?.models.filter(x=>COMMON.has(extension(x.path))).length===1) await openSelected();
+    $('importStatus').textContent = 'Import failed: ' + (error.message || error);
+    status($('importStatus').textContent, true);
+  } finally {
+    setBusy(false);
+  }
+  if (completed && singleModel) return openSelected(singleModel);
+  return completed;
 }
 async function auditBatch() {
   const project=state.project;
@@ -302,8 +337,8 @@ function loadDemo() {
 function events() {
   $('openFiles').addEventListener('click',e=>{e.stopPropagation();$('filesInput').click()});
   $('openFolder').addEventListener('click',()=>$('folderInput').click());
-  $('filesInput').addEventListener('change',e=>{importFiles(e.target.files);e.target.value='';});
-  $('folderInput').addEventListener('change',e=>{importFiles(e.target.files);e.target.value='';});
+  $('filesInput').addEventListener('change',e=>{const files=Array.from(e.target.files||[]);e.target.value='';void importFiles(files);});
+  $('folderInput').addEventListener('change',e=>{const files=Array.from(e.target.files||[]);e.target.value='';void importFiles(files);});
   $('tryDemo').addEventListener('click',loadDemo);
   $('dropZone').addEventListener('click',e=>{if(e.target.closest('button'))return;$('filesInput').click();});
   $('dropZone').addEventListener('keydown',e=>{
@@ -318,9 +353,9 @@ function events() {
   window.addEventListener('dragover',e=>e.preventDefault());
   window.addEventListener('drop',e=>{e.preventDefault();if(e.dataTransfer?.files?.length)importFiles(e.dataTransfer.files)});
   $('modelSearch').addEventListener('input',filterModels);
-  $('loadModel').addEventListener('click',openSelected);
+  $('loadModel').addEventListener('click',()=>void openSelected());
   $('batchAudit').addEventListener('click',auditBatch);
-  $('modelSelect').addEventListener('dblclick',openSelected);
+  $('modelSelect').addEventListener('dblclick',()=>void openSelected());
   $('modelSelect').addEventListener('change',updateButtons);
   $('textureSelect').addEventListener('change',updateButtons);
   $('previewTexture').addEventListener('click',previewTexture);
