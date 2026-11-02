@@ -94,11 +94,69 @@
         <label><input type="checkbox" id="spinToggle"> Auto rotate</label>
         <label><input type="checkbox" id="wireToggle"> Wireframe</label>
       </div>
+      <section class="studio-panel" id="editorPanel" aria-labelledby="editorHeading">
+        <div class="panel-heading"><span class="eyebrow">EDIT / MODELS</span><h2 id="editorHeading">Mesh editor</h2>
+          <p>Choose a mesh, change its transform and apply. Export GLB to keep edits.</p></div>
+        <div class="studio-editor-top">
+          <label class="studio-label" for="editMesh">Selected mesh <select id="editMesh" class="field" disabled><option value="">Load a model first</option></select></label>
+          <label class="studio-label" for="editColor">Material color <input type="color" id="editColor" value="#6de0c6" disabled></label>
+          <label class="studio-label studio-check"><input type="checkbox" id="editVisible" checked disabled> Visible</label>
+        </div>
+        <div class="edit-transform-grid">
+          <fieldset class="edit-group"><legend>Position</legend>
+            <label>X <input type="number" id="editPx" step="0.1" value="0" disabled></label>
+            <label>Y <input type="number" id="editPy" step="0.1" value="0" disabled></label>
+            <label>Z <input type="number" id="editPz" step="0.1" value="0" disabled></label>
+          </fieldset>
+          <fieldset class="edit-group"><legend>Rotation (°)</legend>
+            <label>X <input type="number" id="editRx" step="5" value="0" disabled></label>
+            <label>Y <input type="number" id="editRy" step="5" value="0" disabled></label>
+            <label>Z <input type="number" id="editRz" step="5" value="0" disabled></label>
+          </fieldset>
+          <fieldset class="edit-group"><legend>Scale</legend>
+            <label>X <input type="number" id="editSx" step="0.1" value="1" disabled></label>
+            <label>Y <input type="number" id="editSy" step="0.1" value="1" disabled></label>
+            <label>Z <input type="number" id="editSz" step="0.1" value="1" disabled></label>
+          </fieldset>
+        </div>
+        <div class="edit-actions">
+          <button id="applyEdit" type="button" class="button primary" disabled>Apply changes</button>
+          <button id="undoEdit" type="button" class="button ghost" disabled>Undo</button>
+          <button id="duplicateMesh" type="button" class="button secondary" disabled>Duplicate mesh</button>
+          <button id="deleteMesh" type="button" class="button ghost" disabled>Delete mesh</button>
+          <label class="studio-label add-shape-label">Add primitive <select class="field" id="primitiveType"><option value="box">Box</option><option value="sphere">Sphere</option><option value="cylinder">Cylinder</option></select></label>
+          <button id="addPrimitive" type="button" class="button secondary" disabled>Add shape +</button>
+        </div>
+        <p class="studio-note">Editing applies to mesh objects in the loaded scene; advanced vertex editing and Boolean operations are not included. Undo reverses the last edit action.</p>
+      </section>
       <div class="action-bar">
         <div><strong>EXPORT AS GLB</strong><span>Portable binary glTF with scene geometry and supported textures</span></div>
         <div class="export-controls"><input type="text" id="outputName" class="field" value="model" aria-label="Export filename">
           <button id="exportGlb" class="button primary" type="button" disabled>Export GLB ↓</button></div>
       </div>
+      <section class="studio-panel" id="printPanel" aria-labelledby="printHeading">
+        <div class="panel-heading"><span class="eyebrow">3D PRINT / EXPERIMENTAL</span><h2 id="printHeading">Layer slicer &amp; supports</h2>
+          <p>Preview geometric cross-sections and export an STL with optional vertical supports.</p></div>
+        <div class="print-controls">
+          <label class="studio-label">Layer height (mm) <input class="field" id="layerHeight" type="number" min="0.05" max="2" step="0.05" value="0.2"></label>
+          <label class="studio-label">Model units <select class="field" id="unitScale"><option value="1">Millimetres (×1)</option><option value="10">Centimetres (×10)</option><option value="1000">Metres (×1000)</option><option value="25.4">Inches (×25.4)</option></select></label>
+          <label class="studio-label studio-check"><input id="enableSupports" type="checkbox"> Generate supports</label>
+          <label class="studio-label">Overhang limit <input class="field" id="overhangAngle" type="number" min="20" max="80" step="5" value="55" disabled></label>
+          <label class="studio-label">Support spacing (mm) <input class="field" id="supportSpacing" type="number" min="3" max="30" step="1" value="8" disabled></label>
+          <button id="sliceModel" type="button" class="button primary" disabled>Slice model</button>
+        </div>
+        <div id="printResult" class="print-result" role="status" aria-live="polite">Load a model and click Slice model to generate layer previews.</div>
+        <div id="sliceViewer" hidden>
+          <label class="studio-label" for="sliceLayer">Layer <strong id="sliceIndex">1 / 1</strong></label>
+          <input type="range" id="sliceLayer" min="0" max="0" step="1" value="0">
+          <canvas id="sliceCanvas" width="540" height="350" role="img" aria-label="XY slice preview"></canvas>
+          <div class="edit-actions">
+            <button id="saveSlice" class="button secondary" type="button">Export layer SVG</button>
+            <button id="saveStl" class="button secondary" type="button">Export STL with supports</button>
+          </div>
+        </div>
+        <p class="studio-note">This is an experimental geometric slice preview, NOT a production printer slicer: no G-code, infill, collision-checked supports or mesh repairs. Always validate the resulting STL in dedicated printer-slicer software. Choose units accurately.</p>
+      </section>
       <p class="status-line" id="statusLine" aria-live="polite">Renderer initializing…</p>
     </main>
 
