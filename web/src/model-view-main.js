@@ -8,7 +8,7 @@ import { initializeStudio } from './studio-actions.js';
 
 const $ = id => document.getElementById(id);
 let studio = null;
-const COMMON = new Set(['.glb','.gltf','.fbx','.obj','.dae','.stl','.ply','.3ds']);
+const COMMON = new Set(['.glb','.gltf','.fbx','.obj','.dae','.stl','.ply','.3ds','.gfbmdl','.trmdl','.trmsh']);
 const IMAGE = new Set(['.png','.jpg','.jpeg','.webp','.bmp']);
 const state = {stage:null, project:null, loaded:null, audit:null, busy:false,
   textureUrl:null, wireMaterials:new Map(), selectionToken:0};
