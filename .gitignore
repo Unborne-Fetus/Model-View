@@ -16,3 +16,11 @@ build/
 # Never commit console key files; users drop prod.keys locally.
 keys/
 *.keys
+
+# Generated build and browser-test artifacts
+node_modules/
+dist-web/
+dist-desktop/
+playwright-report/
+test-results/
+playwright/.cache/
