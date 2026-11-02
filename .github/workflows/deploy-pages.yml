@@ -1,4 +1,4 @@
-name: Deploy GFPAK Open Web
+name: Deploy Model View Web
 
 on:
   push:
@@ -17,7 +17,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: gfpak-pages
+  group: model-view-pages
   cancel-in-progress: true
 
 jobs:
@@ -32,12 +32,12 @@ jobs:
           node-version-file: .nvmrc
       - name: Install web dependencies
         run: npm ci --no-audit --no-fund
-      - name: Test GFLXPACK parser
+      - name: Test model tools and legacy decoders
         run: npm test
       - name: Install browser for GLB export regression
         run: npx playwright install --with-deps chromium
-      - name: Test native texture GLB export in browser
-        run: npx playwright test web/e2e/pokemon-export.spec.js --grep "GLB export merges native RGBA8"
+      - name: Test Model View studio in browser
+        run: npx playwright test web/e2e/model-view.spec.js
       - name: Build GitHub Pages static site
         run: npm run build
       - name: Upload compiled site
