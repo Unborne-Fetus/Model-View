@@ -1,4 +1,4 @@
-name: Build Windows Model Converter
+name: Build Model View Desktop Tools
 on:
   push:
     branches: [main]
@@ -15,7 +15,7 @@ jobs:
           python-version: '3.12'
       - name: Install native NCA reader crypto dependency
         run: python -m pip install --disable-pip-version-check "cryptography>=44,<48" "zstandard>=0.23,<1" "lz4>=4,<5"
-      - name: Test archive reader and model converter
+      - name: Test legacy archive readers
         run: python -m unittest discover -s tests -v
       - uses: actions/setup-node@v5
         with:
@@ -29,5 +29,5 @@ jobs:
         run: call run.bat --build-only
       - uses: actions/upload-artifact@v6
         with:
-          name: GFPAK-OPEN-Windows
-          path: dist/GFPAK-OPEN.exe
+          name: Model-View-Windows
+          path: dist/Model-View.exe
