@@ -140,6 +140,7 @@ function filterModels() {
   const select=$('modelSelect'); select.replaceChildren();
   for(const model of matched.slice(0,1200)) select.add(new Option(model.path,model.path));
   if(matched.some(x=>x.path===previous)) select.value=previous;
+  else if (select.options.length) select.selectedIndex = 0;
   $('modelCount').textContent=matched.length+'/'+rows.length;
   updateButtons();
 }
