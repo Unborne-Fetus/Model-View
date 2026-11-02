@@ -3,9 +3,9 @@ requires = ["setuptools>=65"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "gfpak-open"
+name = "model-view-legacy"
 version = "0.1.0"
-description = "Read-only GFLXPACK archive inspector and resource exporter"
+description = "Legacy specialized conversion backend for Model View"
 requires-python = ">=3.10"
 dependencies = ["cryptography>=44,<48", "zstandard>=0.23,<1", "lz4>=4,<5"]
 
@@ -16,8 +16,8 @@ lz4 = ["lz4>=4"]
 oodle = ["pyooz==0.0.8"]
 
 [project.scripts]
-gfpak-open = "gfpak_open.cli:main"
-gfpak-open-gui = "gfpak_open.gui:main"
+model-view-legacy = "gfpak_open.cli:main"
+model-view-legacy-gui = "gfpak_open.gui:main"
 
 [tool.setuptools.packages.find]
 include = ["gfpak_open*"]
