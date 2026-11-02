@@ -52,11 +52,11 @@ jobs:
         with:
           path: dist-web/
 
-  deploy:
-    environment:
-      name: github-pages
+  check-pages:
     runs-on: ubuntu-latest
     needs: build
+    outputs:
+      ready: ${{ steps.pages.outputs.ready }}
     steps:
       - name: Check GitHub Pages repository configuration
         id: pages
@@ -97,8 +97,16 @@ jobs:
             cat pages.json
             exit 1
           fi
+
+  deploy:
+    if: needs.check-pages.outputs.ready == 'true'
+    environment:
+      name: github-pages
+    runs-on: ubuntu-latest
+    needs: [build, check-pages]
+    steps:
       - name: Publish to GitHub Pages
-        if: steps.pages.outputs.ready == 'true'
+        if: needs.check-pages.outputs.ready == 'true'
         id: deployment
         uses: actions/deploy-pages@v5
       - name: Report deployment URL
