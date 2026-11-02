@@ -152,7 +152,7 @@ function makeResolver(fileItems) {
     manager() {
       const manager = new THREE.LoadingManager();
       manager.setURLModifier(request => {
-        if (/^(data:|blob:|https?:)/i.test(request)) return request;
+        if (/^(data:|blob:)/i.test(request)) return request;
         const safe = normalizePath(request);
         const entry = urls.get(safe) ?? byBase.get(safe.split('/').pop());
         return entry ? getUrl(entry) : 'data:,';
