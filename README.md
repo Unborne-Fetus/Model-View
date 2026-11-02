@@ -14,6 +14,7 @@
 - Run **batch reports for up to 25 models at a time**, exporting one consolidated JSON file
 - Preview supported source image textures, export actual GLB geometry and materials, and save PNG viewport captures
 - Operate **entirely in the browser**; user assets are not uploaded to an application server
+- Reserved, inert banner and below-workspace ad spaces for a later approved advertising integration
 
 The tool intentionally does not claim to repair all models or guarantee visually perfect exports. Some formats, shader features, compressed textures, proprietary engines and skeletal animation variants cannot be preserved by open-source loaders. Only files for which you have appropriate rights should be imported or redistributed.
 
@@ -51,10 +52,14 @@ Processing runs on the user's device. The site does not contain a login system, 
 
 Some code is compatible with proprietary formats and may be subject to third-party licenses. Commercialization requires reviewing imported source, dependency licenses, artwork, and rights before placing ads or collecting payments. **No copyrighted models are included as demo assets.** The built-in demo is generated from primitive geometry.
 
+## Browser support and future ads
+
+Chrome/Chromium, Firefox, WebKit, and emulated Android/iPhone profiles have explicit Playwright compatibility tests. Real iPhone and Android testing is still required for a public release. Advertising slots contain no network scripts or active ads. See [browser and ads implementation notes](docs/BROWSER_AND_ADS.md).
+
 ## Verification
 
 - `npm test` tests parsers and the model-audit library.
-- `npx playwright test` runs Model View smoke tests.
+- `npx playwright install --with-deps chromium firefox webkit && npx playwright test` runs desktop and mobile profile compatibility tests, along with standard model and ZIP smoke tests.
 - Desktop's Python tests can be run separately via `python -m unittest discover -s tests -v`.
 
 Please open issues in this repository for bugs, unsupported formats, and reproducible conversion problems.
