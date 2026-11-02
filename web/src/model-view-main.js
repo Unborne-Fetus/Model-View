@@ -28,6 +28,7 @@ function updateButtons() {
   $('savePng').disabled = !good;
   $('loadModel').disabled = state.busy || !$('modelSelect').value;
   $('previewTexture').disabled = state.busy || !$('textureSelect').value;
+  $('batchAudit').disabled = state.busy || !(state.project?.models||[]).some(x=>COMMON.has(extension(x.path)));
 }
 function safeFileName(name) {
   return String(name).replace(/\.[^.]+$/, '').replace(/[\\/:*?"<>|]+/g,'_').slice(0,125) || 'model';
@@ -216,6 +217,47 @@ async function importFiles(fileList) {
   } finally {setBusy(false)}
   if(state.project?.models.filter(x=>COMMON.has(extension(x.path))).length===1) await openSelected();
 }
+async function auditBatch() {
+  const project=state.project;
+  if(!project||state.busy)return;
+  const rows=project.models.filter(x=>COMMON.has(extension(x.path)));
+  if(!rows.length)return;
+  const cap=25;
+  const results=[];
+  setBusy(true,'Auditing model files locally…');
+  try {
+    for(const [index,item] of rows.slice(0,cap).entries()) {
+      $('busyMessage').textContent='Checking '+(index+1)+' of '+Math.min(rows.length,cap)+': '+item.path;
+      let result;
+      try {
+        result=await loadModel(project,item.path);
+        results.push({path:item.path,format:extension(item.path),
+          ...auditModel(result.root,result.animations||[])});
+      } catch(error) {
+        results.push({path:item.path,status:'error',error:error.message||String(error)});
+      } finally {
+        if(result) {
+          result.disposeAssets?.();
+          result.root.traverse(object=>{
+            if(object.isMesh){
+              object.geometry?.dispose?.();
+              const mats=Array.isArray(object.material)?object.material:[object.material];
+              for(const mat of mats.filter(Boolean))mat.dispose?.();
+            }
+          });
+        }
+      }
+    }
+    const report={app:'Model View',schemaVersion:1,kind:'batch-model-audit',
+      generatedAt:new Date().toISOString(),source:project.label,
+      totalModels:rows.length,audited:results.length,
+      truncated:rows.length>cap,limit:cap,results};
+    downloadBlob('model-view-batch-report.json',JSON.stringify(report,null,2),'application/json');
+    status('Batch quality report saved for '+results.length+' of '+rows.length+' model(s).'+
+      (rows.length>cap?' Limit: '+cap+' models per batch.':''));
+  } catch(error) {status('Batch audit failed: '+error.message,true)}
+  finally {setBusy(false)}
+}
 async function exportCurrent() {
   if(!state.loaded||state.busy)return;
   setBusy(true,'Writing binary glTF…');
@@ -277,6 +319,7 @@ function events() {
   window.addEventListener('drop',e=>{e.preventDefault();if(e.dataTransfer?.files?.length)importFiles(e.dataTransfer.files)});
   $('modelSearch').addEventListener('input',filterModels);
   $('loadModel').addEventListener('click',openSelected);
+  $('batchAudit').addEventListener('click',auditBatch);
   $('modelSelect').addEventListener('dblclick',openSelected);
   $('modelSelect').addEventListener('change',updateButtons);
   $('textureSelect').addEventListener('change',updateButtons);
