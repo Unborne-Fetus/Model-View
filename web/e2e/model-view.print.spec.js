@@ -61,3 +61,29 @@ test('slice solid cube into real layers, preview SVG and download STL',async ({p
   await page.locator('#saveStl').click();
   expect((await stl).suggestedFilename()).toMatch(/-print\.stl$/);
 });
+
+test('choose printer profile, check build envelope and export reference report',async ({page})=>{
+  await page.goto('./');
+  await page.locator('#printerProfile').selectOption('bambu-a1');
+  await expect(page.locator('#printerBedX')).toHaveValue('256');
+  await expect(page.locator('#printerBedX')).toBeDisabled();
+  await expect(page.locator('#slicerRecommendation')).toContainText('Bambu Studio');
+  await page.locator('#printerProfile').selectOption('custom');
+  await expect(page.locator('#printerBedX')).toBeEnabled();
+  await page.locator('#filesInput').setInputFiles({
+    name:'cube.obj',mimeType:'text/plain',buffer:Buffer.from(boxObj)
+  });
+  await expect(page.locator('#activeName')).toHaveText('cube.obj');
+  await page.locator('#layerHeight').fill('1');
+  await page.locator('#printerBedX').fill('5');
+  await page.locator('#sliceModel').click();
+  await expect(page.locator('#printerFit')).toContainText(/BUILD VOLUME EXCEEDED/);
+  await expect(page.locator('#saveStl')).toBeDisabled();
+  await page.locator('#printerBedX').fill('50');
+  await page.locator('#sliceModel').click();
+  await expect(page.locator('#printerFit')).toContainText(/Build envelope: FITS/);
+  await expect(page.locator('#saveStl')).toBeEnabled();
+  const dl=page.waitForEvent('download');
+  await page.locator('#savePrintSetup').click();
+  expect((await dl).suggestedFilename()).toMatch(/-printer-check\.json$/);
+});
