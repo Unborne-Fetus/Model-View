@@ -4,9 +4,9 @@ cd /d "%~dp0"
 
 echo.
 echo ========================================================
-echo  GFPAK OPEN - BUILD AND LAUNCH PORTABLE WINDOWS EXE
+echo  MODEL VIEW - BUILD AND LAUNCH PORTABLE WINDOWS EXE
 echo ========================================================
-echo  Output: %CD%\dist\GFPAK-OPEN.exe
+echo  Output: %CD%\dist\Model-View.exe
 echo  No installer is created. The EXE runs directly.
 echo.
 
@@ -32,7 +32,7 @@ if not exist "node_modules\vite" (
     call npm install --no-audit --no-fund
     if errorlevel 1 goto :failed
 )
-set "GFPAK_DESKTOP=1"
+set "MODEL_VIEW_DESKTOP=1"
 call npm run build
 if errorlevel 1 goto :failed
 if not exist "dist-desktop\index.html" goto :failed
@@ -46,21 +46,21 @@ if not exist "build\blender_deps\flatbuffers\__init__.py" (
 %PYTHON% -c "from gfpak_open.blender_dependencies import has_dependencies; assert has_dependencies('build/blender_deps')"
 if errorlevel 1 goto :failed
 
-echo [4/4] Creating standalone GFPAK-OPEN.exe...
-%PYTHON% -m PyInstaller --noconfirm --onefile --windowed --name GFPAK-OPEN --collect-all webview --collect-all cryptography --collect-all zstandard --collect-all lz4 --hidden-import ooz --add-data "build\blender_deps;blender_deps" --add-data "dist-desktop;web_dist" --add-data "gfpak_open\blender_worker.py;gfpak_open" launch.py
+echo [4/4] Creating standalone Model-View.exe...
+%PYTHON% -m PyInstaller --noconfirm --onefile --windowed --name Model-View --collect-all webview --collect-all cryptography --collect-all zstandard --collect-all lz4 --hidden-import ooz --add-data "build\blender_deps;blender_deps" --add-data "dist-desktop;web_dist" --add-data "gfpak_open\blender_worker.py;gfpak_open" launch.py
 if errorlevel 1 goto :failed
-if not exist "dist\GFPAK-OPEN.exe" goto :failed
+if not exist "dist\Model-View.exe" goto :failed
 
 echo.
 echo ========================================================
 echo  SUCCESS - PORTABLE APPLICATION CREATED
-echo  %CD%\dist\GFPAK-OPEN.exe
+echo  %CD%\dist\Model-View.exe
 echo ========================================================
 echo  Run or copy this EXE. It is not an installer.
 echo  Blender is still needed for unsupported native models.
 echo.
 if /I "%~1"=="--build-only" exit /b 0
-start "" "%CD%\dist\GFPAK-OPEN.exe"
+start "" "%CD%\dist\Model-View.exe"
 exit /b 0
 
 :missing_python
@@ -73,6 +73,6 @@ goto :failed
 
 :failed
 echo.
-echo GFPAK OPEN BUILD FAILED. No working EXE was confirmed.
+echo MODEL VIEW BUILD FAILED. No working EXE was confirmed.
 pause
 exit /b 1
