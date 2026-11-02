@@ -14,11 +14,12 @@
 - Run **batch reports for up to 25 models at a time**, exporting one consolidated JSON file
 - Edit mesh objects: change position, rotation, scale, visibility and material colors; add box/sphere/cylinder primitives; duplicate/delete and undo edits
 - Preview geometric **3D-print cross-sections** with configurable layer height and units; optionally generate simple vertical support columns and export individual SVG slices or a binary **STL with supports**
+- Choose FDM printer profiles for **Bambu Lab A1, Original Prusa MK4S, Creality Ender-3 V3 SE**, or generic/custom printers; validate build-volume fit, nozzle/layer-height compatibility and download a reference JSON print-check report
 - Preview supported source image textures, export actual GLB geometry and materials, and save PNG viewport captures
 - Operate **entirely in the browser**; user assets are not uploaded to an application server
 - Reserved, inert banner and below-workspace ad spaces for a later approved advertising integration
 
-**Printing scope:** This is an experimental geometric slice preview, not a complete FDM slicer. It does not generate G-code, perimeters/infill toolpaths, printer profiles, or collision-safe tree supports. Choose model units carefully. For actual printing, open the STL in a mature slicer and inspect supports, orientations and the toolpath.\n\nThe tool intentionally does not claim to repair all models or guarantee visually perfect exports. Some formats, shader features, compressed textures, proprietary engines and skeletal animation variants cannot be preserved by open-source loaders. Only files for which you have appropriate rights should be imported or redistributed.
+**Printing scope:** This is an experimental geometric slice preview, not a complete FDM slicer. It does not generate G-code, perimeters/infill toolpaths, machine-ready slicer profiles, or collision-safe tree supports. Choose model units carefully. For actual printing, open the STL in a mature slicer and inspect supports, orientations and the toolpath.\n\nThe tool intentionally does not claim to repair all models or guarantee visually perfect exports. Some formats, shader features, compressed textures, proprietary engines and skeletal animation variants cannot be preserved by open-source loaders. Only files for which you have appropriate rights should be imported or redistributed.
 
 ## Quick start
 
@@ -36,7 +37,7 @@ Open the Vite URL shown in the terminal. To make a deployable site:
 npm run build
 ```
 
-The build output is `dist-web/`. The app is deployed using the `Deploy Model View Web` workflow and uses the GitHub Pages base path `/Model-View/`. Enable **GitHub Actions** as the Pages deployment source in repository settings. A deployed site is not confirmed until the workflow succeeds.
+The build output is `dist-web/`. The `Deploy Model View Web` workflow tests all Chromium web flows and always uploads a downloadable `model-view-static-site` artifact. GitHub Pages must be enabled in [repository Pages settings](https://github.com/Unborne-Fetus/Model-View/settings/pages), with **Build and deployment → Source → GitHub Actions**. If Pages is disabled, the workflow posts explicit setup instructions and skips publication rather than treating its 404 as an app/build failure. After enabling Pages, run the workflow manually from [Actions](https://github.com/Unborne-Fetus/Model-View/actions/workflows/deploy-pages.yml). The public URL is not verified until an actual Pages deployment succeeds.
 
 ## What was reused from GFPAK-OPEN
 
@@ -47,6 +48,10 @@ The general-purpose homepage is now `web/index.html` and `web/src/model-view-mai
 **Optional legacy tools:** `web/legacy.html` preserves the original game-format archive explorer, specialized mesh/texture decoders and desktop Blender-assisted converter. These tools remain in the repository to avoid losing working features, but they are not the default commercial product. The legacy Python implementation retains the internal package name `gfpak_open` so its imports and regression tests continue to work. See [archived documentation](docs/LEGACY_GFPAK.md) for its existing format support and limitations.
 
 To build the Windows portable asset tools, run `run.bat` on Windows. That version opens the **new general Model View studio** by default, with optional legacy tools accessible from the top navigation. The web app works without Windows, Python, Blender, or a game file.
+
+## Printer compatibility
+
+Printer presets only compare model dimensions against a selected FDM build envelope and inspect some nozzle/layer settings. They do not send commands to a printer or generate printer-ready G-code. Validate any output with a supported slicer and verify actual machine build limits, materials, supports, and firmware. See [supported printer profiles](docs/PRINTER_COMPATIBILITY.md).
 
 ## Privacy and safety
 
