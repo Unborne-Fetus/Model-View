@@ -1,7 +1,7 @@
 /** Model View editing and print-preview controllers. Does not add printer G-code. */
 import * as THREE from 'three';
 import {editableMeshes,meshSnapshot,applySnapshot,applyMeshEdit,addPrimitive,duplicateMesh,removeEditableMesh} from './model-editor.js';
-import {extractPrintMesh,slicePreview,contoursAt,generateSupports,exportPrintStl,sliceSvg} from './print-tools.js';
+import {extractPrintMesh,slicePreview,contoursAt,generateSupports,exportPrintStl,sliceSvg,topologyReport} from './print-tools.js';
 import {downloadBlob} from './model.js';
 
 const $=id=>document.getElementById(id);
@@ -160,6 +160,7 @@ export function initializeStudio({getRoot,getStage,onChanged,onMessage}) {
       const factor=Number($('unitScale').value);
       const mesh=extractPrintMesh(getRoot(),100000,factor);
       const preview=slicePreview(mesh,Number($('layerHeight').value));
+      const topology=topologyReport(mesh);
       const supports=generateSupports(mesh,{enabled:$('enableSupports').checked,
         angle:Number($('overhangAngle').value),spacing:Number($('supportSpacing').value)});
       print={mesh,preview,supports,factor};
@@ -168,6 +169,9 @@ export function initializeStudio({getRoot,getStage,onChanged,onMessage}) {
       $('sliceViewer').hidden=false;
       $('printResult').textContent=preview.count+' layers · '+mesh.dimensions.map(n=>n.toFixed(1)).join(' × ')+
         ' mm · '+mesh.triangleCount.toLocaleString()+' triangles · '+supports.length+' support columns. '+
+        (topology.isClosed?'Topology: no open edges detected. ':
+        'WARNING: '+topology.boundaryEdges+' boundary edges and '+topology.nonManifoldEdges+
+          ' non-manifold edges; repair model before printing. ')+
         'STL exported in millimetres (Z up).';
       supportPreview(mesh,supports,factor);
       draw();onMessage('Generated geometric layer slices and optional support columns.');
