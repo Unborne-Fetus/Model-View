@@ -9,7 +9,7 @@ export class ModelStage {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.01, 10000);
     this.camera.position.set(5, 3.4, 6);
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.setSize(Math.max(container.clientWidth, 300), Math.max(container.clientHeight, 300));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
