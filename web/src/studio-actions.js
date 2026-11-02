@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import {editableMeshes,meshSnapshot,applySnapshot,applyMeshEdit,addPrimitive,duplicateMesh,removeEditableMesh} from './model-editor.js';
 import {extractPrintMesh,slicePreview,contoursAt,generateSupports,exportPrintStl,sliceSvg,topologyReport} from './print-tools.js';
 import {downloadBlob} from './model.js';
+import {printerById,validatePrintFit,exportPrintSetup} from './printer-profiles.js';
 
 const $=id=>document.getElementById(id);
 const transformIds=['editPx','editPy','editPz','editRx','editRy','editRz','editSx','editSy','editSz'];
@@ -157,6 +158,41 @@ export function initializeStudio({getRoot,getStage,onChanged,onMessage}) {
       ' · Z '+section.z.toFixed(2)+' mm · '+section.loops.length+' loops'+
       (section.openPaths.length?' · '+section.openPaths.length+' open paths':'');
   }
+  function printerSettings(){
+    const profile=printerById($('printerProfile').value);
+    const volume=['printerBedX','printerBedY','printerBedZ'].map(id=>Number($(id).value));
+    const nozzle=Number($('printerNozzle').value);
+    const filament=Number($('printerFilament').value);
+    const margin=Number($('printerMargin').value);
+    return {profile,volume,nozzle,filament,margin};
+  }
+  function selectPrinter(){
+    const printer=printerById($('printerProfile').value);
+    ['printerBedX','printerBedY','printerBedZ'].forEach((id,i)=>{
+      $(id).value=printer.volume[i];
+      $(id).disabled=printer.id!=='custom';
+    });
+    $('printerNozzle').value=printer.nozzle;
+    $('printerFilament').value=printer.filament;
+    $('slicerRecommendation').textContent=printer.name+' — suggested next step: '+printer.slicer+
+      '. Model View checks footprint only; no G-code or machine connection.';
+    invalidateSlice();
+  }
+  function fitLabel(checks,profile,layerHeight){
+    const limits=profile.layer;
+    const layerWarning=layerHeight<limits[0]||layerHeight>limits[1]?
+      ' Selected layer height is outside this profile’s illustrative '+limits[0]+'–'+limits[1]+' mm range.':'';
+    const element=$('printerFit');
+    element.className='print-result '+(checks.fits?(checks.warnings.length||layerWarning?'fit-warning':'fit-pass'):'fit-fail');
+    element.textContent=checks.fits?
+      'Build envelope: FITS '+checks.modelSize.map(n=>n.toFixed(1)).join(' × ')+
+        ' mm within usable '+checks.usable.map(n=>n.toFixed(1)).join(' × ')+
+        ' mm. This is not printer-readiness certification.':
+      'BUILD VOLUME EXCEEDED: '+checks.problems.join(' ');
+    if(checks.warnings.length)element.textContent+=' '+checks.warnings.join(' ');
+    element.textContent+=layerWarning;
+    return checks.fits;
+  }
   function slice(){
     if(!getRoot())return;
     $('sliceModel').disabled=true;
@@ -167,7 +203,12 @@ export function initializeStudio({getRoot,getStage,onChanged,onMessage}) {
       const topology=topologyReport(mesh);
       const supports=generateSupports(mesh,{enabled:$('enableSupports').checked,
         angle:Number($('overhangAngle').value),spacing:Number($('supportSpacing').value)});
-      print={mesh,preview,supports,factor};
+      const settings=printerSettings();
+      const checks=validatePrintFit({dimensions:mesh.dimensions,volume:settings.volume,
+        nozzle:settings.nozzle,filament:settings.filament,
+        layerHeight:preview.layerHeight,margin:settings.margin,supports});
+      print={mesh,preview,supports,factor,settings,checks};
+      fitLabel(checks,settings.profile,preview.layerHeight);
       $('sliceLayer').max=String(preview.count-1);
       $('sliceLayer').value='0';
       $('sliceViewer').hidden=false;
@@ -178,9 +219,12 @@ export function initializeStudio({getRoot,getStage,onChanged,onMessage}) {
           ' non-manifold edges; repair model before printing. ')+
         'STL exported in millimetres (Z up).';
       supportPreview(mesh,supports,factor);
+      $('saveStl').disabled=!checks.fits;
       draw();onMessage('Generated geometric layer slices and optional support columns.');
     } catch(err){
       invalidateSlice();$('printResult').textContent='Slicing failed: '+err.message;
+      $('printerFit').className='print-result fit-fail';
+      $('printerFit').textContent='Cannot check this print: '+err.message;
       onMessage('Slicing failed: '+err.message,true);
     }finally{$('sliceModel').disabled=!getRoot()||!meshes().length;}
   }
@@ -194,11 +238,23 @@ export function initializeStudio({getRoot,getStage,onChanged,onMessage}) {
   }
   function exportStl(){
     if(!print)return;
+    if(!print.checks.fits){onMessage('Printer build-volume check failed; STL download is blocked until it fits.',true);return;}
     try{
       const data=exportPrintStl(print.mesh,print.supports);
       downloadBlob(fileName($('activeName').textContent||'model')+'-print.stl',data,'model/stl');
       onMessage('STL saved. Validate topology, dimensions and supports in a full 3D printer slicer.');
     }catch(err){onMessage('STL export failed: '+err.message,true)}
+  }
+  function savePrinterSetup(){
+    if(!print)return;
+    const data=exportPrintSetup({printer:print.settings.profile,
+      volume:print.settings.volume,nozzle:print.settings.nozzle,
+      filament:print.settings.filament,layerHeight:print.preview.layerHeight,
+      margin:print.settings.margin,dimensions:print.mesh.dimensions,
+      checks:print.checks,supportsCount:print.supports.length});
+    downloadBlob(fileName($('activeName').textContent||'model')+'-printer-check.json',
+      data,'application/json');
+    onMessage('Printer check report saved. This is not a slicer-native printer profile.');
   }
   $('editMesh').addEventListener('change',()=>{selection=meshes().find(o=>o.uuid===$('editMesh').value)||null;readSelected()});
   $('applyEdit').addEventListener('click',apply);
@@ -216,12 +272,19 @@ export function initializeStudio({getRoot,getStage,onChanged,onMessage}) {
   $('sliceLayer').addEventListener('input',draw);
   $('saveSlice').addEventListener('click',exportSvg);
   $('saveStl').addEventListener('click',exportStl);
+  $('savePrintSetup').addEventListener('click',savePrinterSetup);
+  $('printerProfile').addEventListener('change',selectPrinter);
+  for(const id of ['printerBedX','printerBedY','printerBedZ','printerNozzle','printerFilament','printerMargin'])
+    $(id).addEventListener('change',invalidateSlice);
   function reset(){
     clearHelpers();print=null;selection=null;history=[];
+    $('printerFit').className='print-result';
+    $('printerFit').textContent='Load a model and click Slice model to check its printer fit.';
     $('sliceViewer').hidden=true;
     $('printResult').textContent='Load a model and click Slice model to generate layer previews.';
     refreshMeshList();
   }
+  selectPrinter();
   reset();
   return {reset,onModelLoaded:()=>{reset();refreshMeshList();}};
 }
