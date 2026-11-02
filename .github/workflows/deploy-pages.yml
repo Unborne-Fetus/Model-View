@@ -37,7 +37,7 @@ jobs:
       - name: Install browser for GLB export regression
         run: npx playwright install --with-deps chromium
       - name: Test Model View studio in browser
-        run: npx playwright test web/e2e/model-view.spec.js
+        run: npx playwright test --project=chromium web/e2e/model-view.spec.js
       - name: Build GitHub Pages static site
         run: npm run build
       - name: Upload compiled site
