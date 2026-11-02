@@ -30,9 +30,9 @@ def _prepare_assets() -> Path:
     npm = "npm.cmd" if os.name == "nt" else "npm"
     if not (root / "package.json").is_file():
         raise RuntimeError("Cannot locate the web studio project files.")
-    print("Preparing the GFPAK Open desktop viewer for the first launch...", flush=True)
+    print("Preparing the Model View desktop tools for the first launch...", flush=True)
     env = os.environ.copy()
-    env["GFPAK_DESKTOP"] = "1"
+    env["MODEL_VIEW_DESKTOP"] = "1"
     try:
         if not (root / "node_modules" / "vite").exists():
             print("Installing the web viewer dependencies...", flush=True)
@@ -128,8 +128,8 @@ def main():
     with http.server.ThreadingHTTPServer(("127.0.0.1", 0), factory) as server:
         server.daemon_threads = True
         threading.Thread(target=server.serve_forever, daemon=True).start()
-        url = f"http://127.0.0.1:{server.server_port}/"
-        webview.create_window("GFPAK Open — Model Studio", url,
+        url = f"http://127.0.0.1:{server.server_port}/legacy.html"
+        webview.create_window("Model View — Desktop Asset Tools", url,
                               js_api=api, width=1380, height=900, min_size=(1000, 680))
         try:
             webview.start(gui="edgechromium")
