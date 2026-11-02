@@ -41,6 +41,28 @@ export function extractPrintMesh(root, maxTriangles=100000, unitScale=1) {
   return {triangles,origin:min,dimensions:max.map((n,j)=>n-min[j]),triangleCount:raw.length};
 }
 
+/** Counts unmatched/non-manifold triangle edges after positional welding.
+ * This is advisory only; it does not repair geometry or certify printability.
+ */
+export function topologyReport(mesh) {
+  const edges=new Map();
+  const vertex=p=>p.map(v=>Math.round(v*10000)).join(',');
+  for(const t of mesh.triangles){
+    for(let i=0;i<3;i++){
+      const a=vertex(t[i]),b=vertex(t[(i+1)%3]);
+      const edge=a<b?a+'|'+b:b+'|'+a;
+      edges.set(edge,(edges.get(edge)||0)+1);
+    }
+  }
+  let boundaries=0,nonManifold=0;
+  for(const n of edges.values()){
+    if(n===1)boundaries++;
+    else if(n!==2)nonManifold++;
+  }
+  return {boundaryEdges:boundaries,nonManifoldEdges:nonManifold,
+    isClosed:boundaries===0&&nonManifold===0};
+}
+
 function trianglePlane(tri,z) {
   const hits=[];
   for(let j=0;j<3;j++){
